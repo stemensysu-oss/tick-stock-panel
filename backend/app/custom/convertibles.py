@@ -1,4 +1,4 @@
-"""L2 extension for an explicitly imported convertible-bond research snapshot."""
+"""L2 routes for convertible research, calculations and optional quote refresh."""
 from __future__ import annotations
 
 from typing import Annotated, Literal
@@ -16,11 +16,19 @@ from app.services.convertibles_research import (
     MAX_CSV_BYTES,
     ConvertibleConflictError,
     ConvertibleImportError,
+    ConvertibleItem,
+    ConvertibleResearch,
     ConvertibleService,
     ConvertibleSnapshot,
     ConvertibleStoreError,
     ImportPreview,
     validate_date,
+)
+from app.services.convertibles_sources import (
+    ConvertibleDataError,
+    ConvertibleQuoteService,
+    ConvertibleSourceStatus,
+    TickFlowConvertibleProvider,
 )
 
 EXTENSION_ID = "research.convertibles"
@@ -44,6 +52,31 @@ class ImportRequest(PreviewRequest):
     confirmed: Literal[True]
 
 
+class RefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: str = Field(min_length=1, max_length=64)
+
+
+class AnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    research: ConvertibleResearch
+    expected_revision: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class ResearchRequest(AnalysisRequest):
+    expected_revision: str = Field(min_length=1, max_length=64)
+
+
+class RestorePreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    snapshot: ConvertibleSnapshot
+
+
+class RestoreRequest(RestorePreviewRequest):
+    expected_revision: str = Field(min_length=1, max_length=64)
+    confirmed: Literal[True]
+
+
 def get_service() -> ConvertibleService:
     if _service is None:
         raise HTTPException(503, "可转债研究模块尚未就绪，请检查服务启动状态")
@@ -53,6 +86,15 @@ def get_service() -> ConvertibleService:
 ServiceDependency = Annotated[ConvertibleService, Depends(get_service)]
 
 
+def get_quote_service() -> ConvertibleQuoteService:
+    # Configuration is read per request so saving a new key takes effect without
+    # reopening the extension, and status never performs a network probe.
+    return ConvertibleQuoteService(TickFlowConvertibleProvider())
+
+
+QuoteServiceDependency = Annotated[ConvertibleQuoteService, Depends(get_quote_service)]
+
+
 def setup(registrar: BackendExtensionRegistrar) -> None:
     router = APIRouter(prefix="/api/ext/convertibles", tags=["convertible-research"])
 
@@ -60,6 +102,30 @@ def setup(registrar: BackendExtensionRegistrar) -> None:
     def snapshot(service: ServiceDependency) -> ConvertibleSnapshot:
         try:
             return service.snapshot()
+        except ConvertibleStoreError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @router.get("/status", response_model=ConvertibleSourceStatus)
+    def status(
+        service: ServiceDependency, quotes: QuoteServiceDependency,
+    ) -> ConvertibleSourceStatus:
+        try:
+            return quotes.status(service.snapshot())
+        except ConvertibleDataError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from None
+        except ConvertibleStoreError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @router.post("/refresh", response_model=ConvertibleSnapshot)
+    def refresh(
+        body: RefreshRequest, service: ServiceDependency, quotes: QuoteServiceDependency,
+    ) -> ConvertibleSnapshot:
+        try:
+            return quotes.refresh(service, expected_revision=body.expected_revision)
+        except ConvertibleDataError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from None
+        except ConvertibleConflictError as exc:
+            raise HTTPException(409, str(exc)) from exc
         except ConvertibleStoreError as exc:
             raise HTTPException(503, str(exc)) from exc
 
@@ -97,6 +163,67 @@ def setup(registrar: BackendExtensionRegistrar) -> None:
             raise HTTPException(409, str(exc)) from exc
         except ConvertibleStoreError as exc:
             raise HTTPException(503, str(exc)) from exc
+
+    @router.post("/restore/preview", response_model=ImportPreview)
+    def preview_restore(
+        body: RestorePreviewRequest, service: ServiceDependency,
+    ) -> ImportPreview:
+        try:
+            return service.preview_restore(body.snapshot)
+        except ConvertibleStoreError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @router.post("/restore", response_model=ConvertibleSnapshot)
+    def restore(
+        body: RestoreRequest, service: ServiceDependency,
+    ) -> ConvertibleSnapshot:
+        try:
+            return service.restore_backup(
+                body.snapshot, expected_revision=body.expected_revision,
+            )
+        except ConvertibleImportError as exc:
+            raise HTTPException(422, {
+                "message": str(exc),
+                "errors": [error.model_dump() for error in exc.preview.errors],
+            }) from exc
+        except ConvertibleConflictError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ConvertibleStoreError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @router.post("/{code}/analyze", response_model=ConvertibleItem)
+    def analyze(
+        code: str, body: AnalysisRequest, service: ServiceDependency,
+    ) -> ConvertibleItem:
+        try:
+            return service.analyze_research(
+                code, body.research, expected_revision=body.expected_revision,
+            )
+        except ConvertibleConflictError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ConvertibleStoreError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @router.put("/{code}/research", response_model=ConvertibleSnapshot)
+    def save_research(
+        code: str, body: ResearchRequest, service: ServiceDependency,
+    ) -> ConvertibleSnapshot:
+        try:
+            return service.update_research(
+                code, body.research, expected_revision=body.expected_revision,
+            )
+        except ConvertibleConflictError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ConvertibleStoreError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
 
     registrar.include_router(router)
 
