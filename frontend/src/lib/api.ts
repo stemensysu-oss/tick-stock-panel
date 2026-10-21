@@ -2385,6 +2385,49 @@ export interface FundHoldingsResponse extends FundResponse {
   fund_ratio_pct: number | null
 }
 
+export interface ConvertibleCashFlow { date: string; amount: number }
+export interface ConvertibleEvent {
+  date: string
+  type: 'call' | 'put' | 'revision' | 'coupon' | 'maturity' | 'announcement'
+  title: string
+  source_url?: string | null
+  note?: string | null
+}
+export interface ConvertibleClause {
+  window_days: number
+  required_days: number
+  trigger_ratio_pct: number
+  consecutive: boolean
+  start_date: string | null
+  end_date: string | null
+  paused_until: string | null
+  observations_complete: boolean
+}
+export interface ConvertibleProgress {
+  state: 'unknown' | 'observing' | 'met' | 'not_applicable'
+  hit_days: number | null
+  observed_days: number
+  window_days: number | null
+  required_days: number | null
+  as_of: string | null
+  note: string
+}
+export interface ConvertibleResearch {
+  cash_flows: ConvertibleCashFlow[]
+  put_cash_flows: ConvertibleCashFlow[]
+  cash_flows_complete: boolean
+  price_basis: 'full' | 'clean' | null
+  accrued_interest: number | null
+  put_cash_flows_complete: boolean
+  discount_rate_pct: number | null
+  risk_free_rate_pct: number | null
+  dividend_yield_pct: number | null
+  events: ConvertibleEvent[]
+  call_clause: ConvertibleClause | null
+  put_clause: ConvertibleClause | null
+  observations_as_of: string | null
+  observations: { date: string; stock_close: number; conversion_price: number }[]
+}
 export interface ConvertibleItem {
   code: string
   name: string
@@ -2401,14 +2444,66 @@ export interface ConvertibleItem {
   conversion_premium_pct: number | null
   /** 债券价格 + 转股溢价率百分数，不是收益率。 */
   double_low: number | null
+  // 兼容旧版研究清单和持久化查询缓存；新增未知值不按零处理。
+  bond_change_pct?: number | null
+  stock_change_pct?: number | null
+  stock_pb?: number | null
+  credit_rating?: string | null
+  industry?: string | null
+  concepts?: string | null
+  asset_type?: 'convertible' | 'exchangeable'
+  listing_date?: string | null
+  outstanding_amount?: number | null
+  turnover_amount?: number | null
+  turnover_rate_pct?: number | null
+  float_market_cap?: number | null
+  fund_holding_pct?: number | null
+  fund_holding_report_date?: string | null
+  fund_holding_publish_date?: string | null
+  call_trigger_ratio_pct?: number | null
+  put_trigger_ratio_pct?: number | null
+  conversion_start_date?: string | null
+  conversion_price_effective_date?: string | null
+  stock_volatility_pct?: number | null
+  volatility_window_days?: number | null
+  volatility_adjustment?: 'none' | 'forward' | 'backward' | null
+  quote_at?: string | null
+  stock_quote_at?: string | null
+  fetched_at?: string | null
+  quote_source?: string | null
+  terms_source?: string | null
+  source_url?: string | null
+  remaining_years?: number | null
+  call_trigger_price?: number | null
+  put_trigger_price?: number | null
+  /** 剩余债券本金 / 正股流通市值 × 100%，不使用转债市值。 */
+  debt_to_float_cap_pct?: number | null
+  pure_bond_value?: number | null
+  option_value?: number | null
+  /** ACT/365 年复利、税前现金流内部收益率。 */
+  ytm_pct?: number | null
+  put_yield_pct?: number | null
+  analysis_warnings?: string[]
+  research?: ConvertibleResearch | null
+  call_progress?: ConvertibleProgress | null
+  put_progress?: ConvertibleProgress | null
 }
 
 export interface ConvertibleDataset {
+  schema_version?: number
   revision: string
   as_of: string | null
   updated_at: string | null
-  source: '用户导入'
+  source: string
   items: ConvertibleItem[]
+}
+export interface ConvertibleSourceStatus {
+  provider: string
+  configured: boolean
+  mode: 'realtime' | 'unconfigured'
+  message: string
+  capabilities: { quotes: boolean; terms: boolean; announcements: boolean }
+  last_refresh_at: string | null
 }
 
 export interface ConvertibleImportInput {
@@ -2438,6 +2533,27 @@ export const api = {
   fundHoldings: (ticker: string) =>
     request<FundHoldingsResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/holdings`, { quiet: true }),
   convertibles: () => request<ConvertibleDataset>('/api/ext/convertibles', { quiet: true }),
+  convertibleSourceStatus: () => request<ConvertibleSourceStatus>('/api/ext/convertibles/status', { quiet: true }),
+  previewConvertibleRestore: (input: { snapshot: ConvertibleDataset }) =>
+    request<ConvertiblePreview>('/api/ext/convertibles/restore/preview', {
+      method: 'POST', body: JSON.stringify(input), quiet: true,
+    }),
+  restoreConvertibles: (input: { snapshot: ConvertibleDataset; expected_revision: string; confirmed: true }) =>
+    request<ConvertibleDataset>('/api/ext/convertibles/restore', {
+      method: 'POST', body: JSON.stringify(input), quiet: true,
+    }),
+  refreshConvertibles: (input: { expected_revision: string }) =>
+    request<ConvertibleDataset>('/api/ext/convertibles/refresh', {
+      method: 'POST', body: JSON.stringify(input), quiet: true,
+    }),
+  analyzeConvertible: (code: string, research: ConvertibleResearch, expectedRevision: string) =>
+    request<ConvertibleItem>(`/api/ext/convertibles/${encodeURIComponent(code)}/analyze`, {
+      method: 'POST', body: JSON.stringify({ research, expected_revision: expectedRevision }), quiet: true,
+    }),
+  saveConvertibleResearch: (code: string, input: { expected_revision: string; research: ConvertibleResearch }) =>
+    request<ConvertibleDataset>(`/api/ext/convertibles/${encodeURIComponent(code)}/research`, {
+      method: 'PUT', body: JSON.stringify(input), quiet: true,
+    }),
   previewConvertibles: (input: ConvertibleImportInput) =>
     request<ConvertiblePreview>('/api/ext/convertibles/preview', {
       method: 'POST', body: JSON.stringify(input), quiet: true,

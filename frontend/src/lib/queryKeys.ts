@@ -27,6 +27,7 @@ export const QK = {
   fundNav: (ticker: string, range: string) => ['fund-research', 'nav', ticker, range] as const,
   fundHoldings: (ticker: string) => ['fund-research', 'holdings', ticker] as const,
   convertibles: ['convertible-research', 'dataset'] as const,
+  convertibleSourceStatus: ['convertible-research', 'source-status'] as const,
 
   // Watchlist
   watchlist:            ['watchlist'] as const,
