@@ -22,6 +22,12 @@ from app.services.convertibles_research import (
     ConvertibleStoreError,
     parse_csv,
 )
+from app.services.convertibles_sources import (
+    ConvertibleQuote,
+    ConvertibleQuoteBatch,
+    ConvertibleQuoteService,
+    TickFlowConvertibleProvider,
+)
 
 CSV = (
     "code,name,bond_price,stock_code,stock_price,conversion_price,face_value,maturity_date\n"
@@ -258,3 +264,193 @@ def test_api_fails_clearly_before_extension_startup(client, monkeypatch):
     response = client.get("/api/ext/convertibles")
     assert response.status_code == 503
     assert "尚未就绪" in response.json()["detail"]
+
+
+def save_initial_snapshot(client, csv_text=CSV):
+    response = client.post("/api/ext/convertibles/import", json={
+        "csv_text": csv_text, "as_of": AS_OF, "expected_revision": "0", "confirmed": True,
+    })
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_status_checks_local_configuration_without_fetching_quotes(client):
+    provider = TickFlowConvertibleProvider(
+        api_key_getter=lambda: "test key",
+        client_factory=lambda _key: pytest.fail("status must not open a network client"),
+    )
+    client.app.dependency_overrides[convertibles.get_quote_service] = (
+        lambda: ConvertibleQuoteService(provider)
+    )
+    response = client.get("/api/ext/convertibles/status")
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider": "tickflow", "configured": True, "mode": "realtime",
+        "message": "已配置行情 Key；连接和标的权限将在刷新时验证。条款与公告仍需独立提供。",
+        "capabilities": {"quotes": True, "terms": False, "announcements": False},
+        "last_refresh_at": None,
+    }
+
+
+def test_refresh_missing_key_empty_list_and_bad_revision_have_explicit_status(client):
+    provider = TickFlowConvertibleProvider(api_key_getter=lambda: "")
+    client.app.dependency_overrides[convertibles.get_quote_service] = (
+        lambda: ConvertibleQuoteService(provider)
+    )
+    assert client.get("/api/ext/convertibles/status").json()["mode"] == "unconfigured"
+    assert client.post("/api/ext/convertibles/refresh", json={
+        "expected_revision": "0",
+    }).status_code == 422
+    saved = save_initial_snapshot(client)
+    response = client.post("/api/ext/convertibles/refresh", json={
+        "expected_revision": saved["revision"],
+    })
+    assert response.status_code == 503
+    assert client.get("/api/ext/convertibles").json() == saved
+    assert client.post("/api/ext/convertibles/refresh", json={
+        "expected_revision": "0",
+    }).status_code == 409
+
+
+def test_api_refresh_is_partial_quote_merge_not_research_replacement(client):
+    saved = save_initial_snapshot(client)
+
+    class Provider:
+        name = "tickflow"
+
+        def configured(self):
+            return True
+
+        def quotes(self, symbols):
+            assert symbols == ["000001.SZ", "110001.SH"]
+            return ConvertibleQuoteBatch(
+                quotes={"110001.SH": ConvertibleQuote(
+                    symbol="110001.SH", price=132.0, change_pct=10.0,
+                    turnover_amount=12300.0, turnover_rate_pct=105.0,
+                    quote_at="2026-10-21T15:00:00+08:00",
+                )},
+                fetched_at="2026-10-21T15:01:00+08:00",
+            )
+
+    client.app.dependency_overrides[convertibles.get_quote_service] = (
+        lambda: ConvertibleQuoteService(Provider())
+    )
+    response = client.post("/api/ext/convertibles/refresh", json={
+        "expected_revision": saved["revision"],
+    })
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["bond_price"] == 132
+    assert item["stock_price"] is None
+    assert item["stock_quote_at"] is None
+    assert item["conversion_price"] == 10
+    assert item["maturity_date"] == "2030-01-01"
+    assert item["conversion_premium_pct"] is None
+    assert item["turnover_rate_pct"] == 105
+    assert client.get("/api/ext/convertibles/status").json()["last_refresh_at"] == (
+        "2026-10-21T15:01:00+08:00"
+    )
+
+
+def test_analysis_is_read_only_and_research_save_uses_compare_and_swap(client):
+    saved = save_initial_snapshot(client, CSV.replace("2030-01-01", "2027-10-21"))
+    research = {
+        "cash_flows": [{"date": "2027-10-21", "amount": 132}],
+        "cash_flows_complete": True,
+        "price_basis": "full",
+        "discount_rate_pct": 10,
+        "events": [{
+            "date": AS_OF, "type": "announcement", "title": "用户核对的公告",
+            "source_url": "https://www.sse.com.cn/", "note": "测试来源",
+        }],
+    }
+    response = client.post("/api/ext/convertibles/110001/analyze", json={"research": research})
+    assert response.status_code == 200
+    assert response.json()["ytm_pct"] == pytest.approx(10, abs=1e-6)
+    assert response.json()["pure_bond_value"] == pytest.approx(120, abs=1e-6)
+    assert client.get("/api/ext/convertibles").json() == saved
+    payload = {"research": research, "expected_revision": saved["revision"]}
+    response = client.put("/api/ext/convertibles/110001/research", json=payload)
+    assert response.status_code == 200
+    assert response.json()["revision"] != saved["revision"]
+    assert response.json()["items"][0]["research"]["events"][0]["title"] == "用户核对的公告"
+    assert client.put("/api/ext/convertibles/110001/research", json=payload).status_code == 409
+
+
+def test_research_rejects_unsafe_links_and_unknown_codes_without_writes(client):
+    saved = save_initial_snapshot(client)
+    unsafe = {"research": {"events": [{
+        "date": AS_OF, "type": "announcement", "title": "未保存",
+        "source_url": "javascript:alert(1)",
+    }]}, "expected_revision": saved["revision"]}
+    assert client.put("/api/ext/convertibles/110001/research", json=unsafe).status_code == 422
+    assert client.post("/api/ext/convertibles/110999/analyze", json={
+        "research": {},
+    }).status_code == 404
+    assert client.put("/api/ext/convertibles/110999/research", json={
+        "research": {}, "expected_revision": saved["revision"],
+    }).status_code == 404
+    assert client.get("/api/ext/convertibles").json() == saved
+
+
+def test_analysis_detects_stale_editor_revision_and_remains_read_only(client):
+    old = save_initial_snapshot(client)
+    updated = client.put("/api/ext/convertibles/110001/research", json={
+        "research": {"events": [{"date": AS_OF, "type": "announcement", "title": "已更新"}]},
+        "expected_revision": old["revision"],
+    })
+    assert updated.status_code == 200
+    current = updated.json()
+    assert client.post("/api/ext/convertibles/110001/analyze", json={
+        "research": {}, "expected_revision": old["revision"],
+    }).status_code == 409
+    assert client.post("/api/ext/convertibles/110001/analyze", json={
+        "research": {}, "expected_revision": current["revision"],
+    }).status_code == 200
+    assert client.post("/api/ext/convertibles/110001/analyze", json={
+        "research": {},
+    }).status_code == 200  # old callers remain compatible
+    assert client.get("/api/ext/convertibles").json() == current
+
+
+def test_backup_restore_previews_without_writes_and_preserves_research(client):
+    saved = save_initial_snapshot(client)
+    backup = dict(saved)
+    backup["items"] = [dict(saved["items"][0], research={
+        "events": [{"date": AS_OF, "type": "announcement", "title": "备份中的研究"}],
+    })]
+    backup["items"][0]["double_low"] = 999999
+    response = client.post("/api/ext/convertibles/restore/preview", json={"snapshot": backup})
+    assert response.status_code == 200
+    assert response.json()["valid"]
+    assert response.json()["base_revision"] == saved["revision"]
+    assert response.json()["items"][0]["double_low"] == 120
+    assert client.get("/api/ext/convertibles").json() == saved
+    payload = {"snapshot": backup, "expected_revision": saved["revision"], "confirmed": True}
+    response = client.post("/api/ext/convertibles/restore", json=payload)
+    assert response.status_code == 200
+    restored = response.json()
+    assert restored["revision"] != saved["revision"]
+    assert restored["items"][0]["research"]["events"][0]["title"] == "备份中的研究"
+    assert restored["items"][0]["double_low"] == 120
+    assert client.post("/api/ext/convertibles/restore", json=payload).status_code == 409
+
+
+@pytest.mark.parametrize("invalid", ["schema", "empty", "date", "duplicate", "unconfirmed"])
+def test_invalid_restore_never_replaces_the_current_snapshot(client, invalid):
+    saved = save_initial_snapshot(client)
+    backup = dict(saved)
+    payload = {"snapshot": backup, "expected_revision": saved["revision"], "confirmed": True}
+    if invalid == "schema":
+        backup["schema_version"] = 999
+    elif invalid == "empty":
+        backup["items"] = []
+    elif invalid == "date":
+        backup["as_of"] = None
+    elif invalid == "duplicate":
+        backup["items"] = [saved["items"][0], saved["items"][0]]
+    else:
+        payload["confirmed"] = False
+    response = client.post("/api/ext/convertibles/restore", json=payload)
+    assert response.status_code == 422
+    assert client.get("/api/ext/convertibles").json() == saved
