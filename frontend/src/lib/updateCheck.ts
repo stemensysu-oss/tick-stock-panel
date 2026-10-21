@@ -11,10 +11,11 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { useVersion } from '@/lib/useSharedQueries'
 
-// 检查更新的目标仓库 (Release 清单来源) — 仓库已由 tickflow-stock-panel 改名,
-// 用当前名可少依赖一次 GitHub 的改名重定向
-const UPDATE_REPO = 'shy3130/tick-stock-panel'
-const CACHE_KEY = 'update_check_cache'
+// 个人二开安装包只跟随本 fork 的 Release，避免下载原版覆盖研究扩展。
+const UPDATE_REPO = 'stemensysu-oss/tick-stock-panel'
+const RELEASES_URL = `https://github.com/${UPDATE_REPO}/releases`
+// 不迁移旧版的无仓库缓存：它可能仍指向上游原版安装包。
+const CACHE_KEY = `update_check_cache:${UPDATE_REPO}`
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 export type UpdateStatus = 'idle' | 'checking' | 'latest' | 'found' | 'error'
@@ -28,9 +29,10 @@ interface UpdateState {
   status: UpdateStatus
   info: UpdateInfo | null
   checkedAt: number
+  error: string | null
 }
 
-let state: UpdateState = { status: 'idle', info: null, checkedAt: 0 }
+let state: UpdateState = { status: 'idle', info: null, checkedAt: 0, error: null }
 const listeners = new Set<() => void>()
 
 function setState(next: Partial<UpdateState>): void {
@@ -70,6 +72,18 @@ interface CacheBlob {
   checkedAt: number
 }
 
+function releaseUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  try {
+    const url = new URL(value)
+    if (
+      url.origin === 'https://github.com' && !url.username && !url.password &&
+      url.pathname.startsWith(`/${UPDATE_REPO}/releases/`)
+    ) return url.href
+  } catch { /* 不把旧仓库或无效清单链接作为个人版下载入口。 */ }
+  return null
+}
+
 function readCache(): CacheBlob | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY)
@@ -79,6 +93,7 @@ function readCache(): CacheBlob | null {
       typeof v.current !== 'string' ||
       typeof v.latest !== 'string' ||
       typeof v.url !== 'string' ||
+      !releaseUrl(v.url) ||
       typeof v.found !== 'boolean' ||
       typeof v.checkedAt !== 'number'
     ) {
@@ -98,28 +113,32 @@ function writeCache(blob: CacheBlob): void {
   }
 }
 
+class NoPublishedReleaseError extends Error {}
+
 // 优先 api.github.com (官方带 CORS, 浏览器可直连; 未认证限额 60 次/时);
 // latest.json 清单 (release.yml 产物) 作兜底 — API 限流或字段变动时仍可取到版本号。
 async function fetchLatest(): Promise<UpdateInfo> {
   let latest = ''
-  let url = `https://github.com/${UPDATE_REPO}/releases/latest`
+  let url = `${RELEASES_URL}/latest`
   const r = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
     cache: 'no-store',
   })
   if (r.ok) {
     const rel = await r.json()
     latest = String(rel.tag_name ?? '')
-    url = rel.html_url || url
+    url = releaseUrl(rel.html_url) ?? url
   }
   if (!latest) {
     const m = await fetch(
-      `https://github.com/${UPDATE_REPO}/releases/latest/download/latest.json`,
+      `${RELEASES_URL}/latest/download/latest.json`,
       { cache: 'no-store' },
     )
     if (m.ok) {
       const manifest = await m.json()
       latest = String(manifest.tag ?? '')
-      url = manifest.notes_url || url
+      url = releaseUrl(manifest.notes_url) ?? url
+    } else if (r.status === 404 && m.status === 404) {
+      throw new NoPublishedReleaseError()
     }
   }
   if (!latest) throw new Error('no release info')
@@ -141,23 +160,29 @@ export async function checkForUpdate(
         status: c.found ? 'found' : 'latest',
         info: { latest: c.latest, url: c.url },
         checkedAt: c.checkedAt,
+        error: null,
       })
       return
     }
   }
   inFlight = true
-  if (!opts.silent) setState({ status: 'checking' })
+  if (!opts.silent) setState({ status: 'checking', error: null })
   const checkedAt = Date.now()
   try {
     const info = await fetchLatest()
     const found = compareVersion(cur, info.latest) < 0
-    setState({ status: found ? 'found' : 'latest', info, checkedAt })
+    setState({ status: found ? 'found' : 'latest', info, checkedAt, error: null })
     writeCache({ current: cur, latest: info.latest, url: info.url, found, checkedAt })
-  } catch {
+  } catch (error) {
     // 不落缓存: 下次启动重试 (静默检查每次会话最多一次, 不会打爆限额)。
     // 每小时复检 (silent) 失败时若已亮 NEW, 保留 found 不降级为 error。
     if (!(opts.silent && state.status === 'found')) {
-      setState({ status: 'error', checkedAt })
+      setState({
+        status: 'error', info: null, checkedAt,
+        error: error instanceof NoPublishedReleaseError
+          ? '个人二开仓库没有可访问的最新正式 Release（404），可能尚未发布或暂不可访问。'
+          : '无法检查个人二开版更新，请稍后重试或查看该仓库的 Releases。',
+      })
     }
   } finally {
     inFlight = false
@@ -180,6 +205,7 @@ export function useUpdateCheck(): {
   status: UpdateStatus
   info: UpdateInfo | null
   checkedAt: number
+  error: string | null
   check: () => void
 } {
   const s = useSyncExternalStore(subscribe, getUpdateState)
@@ -202,5 +228,5 @@ export function useUpdateCheck(): {
   const check = useCallback(() => {
     void checkForUpdate(current, { force: true })
   }, [current])
-  return { status: s.status, info: s.info, checkedAt: s.checkedAt, check }
+  return { status: s.status, info: s.info, checkedAt: s.checkedAt, error: s.error, check }
 }
