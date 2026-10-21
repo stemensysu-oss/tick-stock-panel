@@ -21,6 +21,13 @@ export const QK = {
   overviewMarket: (asOf?: string) => ['overview-market', asOf ?? 'latest'] as const,
   indexQuotes:    ['index-quotes'] as const,
 
+  // 基金日级研究 / 用户导入可转债清单，独立于股票实时 SSE 缓存。
+  fundResearchStatus: ['fund-research', 'status'] as const,
+  fundProfile: (ticker: string) => ['fund-research', 'profile', ticker] as const,
+  fundNav: (ticker: string, range: string) => ['fund-research', 'nav', ticker, range] as const,
+  fundHoldings: (ticker: string) => ['fund-research', 'holdings', ticker] as const,
+  convertibles: ['convertible-research', 'dataset'] as const,
+
   // Watchlist
   watchlist:            ['watchlist'] as const,
   watchlistGroups:      ['watchlist-groups'] as const,
