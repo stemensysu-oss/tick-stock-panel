@@ -2,7 +2,8 @@ name: 桌面客户端发布
 
 # 触发方式: 手动 (workflow_dispatch)。
 # 在 GitHub Actions 页面点 "Run workflow", 选择要构建的平台 + 版本号,
-# 构建完成后自动创建/更新 Release 并上传安装包。
+# 个人 fork 只生成经过验证的 Actions artifact，不创建 Release 或 tag。
+# 仅原作者仓库保留显式分离的发布 job；构建 job 没有 contents 写权限。
 #
 # 为什么不用 tag 自动触发:
 #   - 多平台并行构建, mac/linux 未就绪时会自动失败污染 Release
@@ -10,26 +11,26 @@ name: 桌面客户端发布
 #   - 版本号通过 input 传入, 与 tag 解耦, 更灵活
 #
 # 使用:
-#   gh workflow run release.yml -f version=v0.2.0 -f platforms=windows
+#   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.12 -f platforms=windows
 #   或 GitHub 网页 Actions → 桌面客户端发布 → Run workflow
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号 (如 v0.1.33, 用作 Release tag 和标题; 必须与 frontend/package.json 的 version 一致, 否则流水线直接失败)'
+        description: '版本号 (必须与 frontend/package.json 一致；个人 fork 仅构建，不发布 Release/tag)'
         required: true
-        default: 'v0.3.11'
+        default: 'v0.3.12'
       platforms:
         description: '要构建的平台 (逗号分隔: windows,macos,linux)'
         required: true
         default: 'windows'
       prerelease:
-        description: '是否为预发布 (勾选则标记为 Pre-release)'
+        description: '原作者仓库的预发布标记；个人 fork 忽略此项，始终只上传构建产物'
         type: boolean
         default: false
 
 permissions:
-  contents: write   # 创建 Release 需要写权限
+  contents: read
 
 jobs:
   # 第一步: 过滤出本次要构建的平台
@@ -44,30 +45,24 @@ jobs:
         uses: actions/checkout@v4
 
       - id: filter
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_PLATFORMS: ${{ inputs.platforms }}
         run: |
-          # 版本号唯一权威 = frontend/package.json (安装包、页面显示、更新检查同源)。
-          # 发版输入与它不一致直接失败, 防止 tag/安装包/页面三处版本漂移。
-          PKG_VER=$(python3 -c "import json; print(json.load(open('frontend/package.json'))['version'])")
-          REQ_VER='${{ github.event.inputs.version }}'
-          if [ "v$PKG_VER" != "$REQ_VER" ]; then
-            echo "::error::版本不一致: 发版输入 $REQ_VER, frontend/package.json 为 v$PKG_VER。请以 frontend/package.json 为准, 统一版本号后再发版。"
-            exit 1
-          fi
-
-          REQUESTED="${{ github.event.inputs.platforms }}"
-          # macOS 仅构建 ARM64 (Apple Silicon), 不构建 Intel:
-          #   1) GitHub 最后一个原生 Intel runner (macos-13) 已于 2025-12-04 退役;
-          #   2) 项目依赖 polars, 而 polars 自 1.33 起移除了 macOS x86_64 原生 wheel
-          #      (改 py3-none-any), 在 arm64 runner 上经 Rosetta 无法产出可运行的 x64 包。
-          #   runner 用 macos-26 (2026-02 GA, 免费, arm64 原生, SDK 更新)。
-          ALL='[{"os":"windows-latest","artifact":"TSP-Setup-x64.exe","platform":"windows"},{"os":"macos-26","artifact":"TSP-macos-arm64.dmg","platform":"macos","arch":"arm64"},{"os":"ubuntu-latest","artifact":"TSP-linux-x64.tar.gz","platform":"linux"}]'
-          # 按 input 过滤平台 (macos → arm64 单项)
-          python3 -c "
-          import json, sys
-          requested = '${{ github.event.inputs.platforms }}'.split(',')
-          requested = [r.strip() for r in requested if r.strip()]
-          ver = '${{ github.event.inputs.version }}'.lstrip('v')  # v0.3.3 → 0.3.3
-          all_platforms = json.loads('''$ALL''')
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          ver = json.loads(Path('frontend/package.json').read_text())['version']
+          if not re.fullmatch(r'\d+\.\d+\.\d+', ver) or os.environ['REQUESTED_VERSION'] != 'v' + ver:
+              raise SystemExit('版本不一致：version 输入必须为 v + frontend/package.json version')
+          requested = [p.strip() for p in os.environ['REQUESTED_PLATFORMS'].split(',') if p.strip()]
+          if not requested or set(requested) - {'windows', 'macos', 'linux'}:
+              raise SystemExit('platforms 必须为 windows,macos,linux 的非空子集')
+          all_platforms = [
+              {'os': 'windows-latest', 'artifact': 'TSP-Setup-x64.exe', 'platform': 'windows'},
+              {'os': 'macos-26', 'artifact': 'TSP-macos-arm64.dmg', 'platform': 'macos', 'arch': 'arm64'},
+              {'os': 'ubuntu-latest', 'artifact': 'TSP-linux-x64.tar.gz', 'platform': 'linux'},
+          ]
           selected = [p for p in all_platforms if p['platform'] in requested]
           # 产物文件名带版本号 (TSP-Setup-x64-0.3.3.exe): 用户下载后一眼可辨版本。
           # 按已知后缀插入版本号 — 不能用 rpartition('.') 拆扩展名:
@@ -82,15 +77,20 @@ jobs:
               else:
                   raise SystemExit(f'未知产物后缀: {name}')
           print('matrix=' + json.dumps({'include': selected}))
-          with open('$GITHUB_OUTPUT', 'a') as f:
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write('matrix=' + json.dumps({'include': selected}) + '\n')
               f.write('ver=' + ver + '\n')
-          "
+          PY
 
   # 第二步: 各平台并行构建
   build:
     needs: prepare
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    env:
+      UV_PYTHON: '3.12'
+      INSTALLER_FILE: ${{ matrix.artifact }}
+      BUILD_VERSION: ${{ needs.prepare.outputs.ver }}
     strategy:
       fail-fast: false   # 单平台失败不影响其他平台
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
@@ -132,7 +132,7 @@ jobs:
         #   rtcompat 会在运行时自动探测 CPU 能力 —— 有 AVX2 用 AVX2, 没有则回退,
         #   对新 CPU 性能几乎无损 (Polars 1.x 官方推荐方案)。
         # 不加 --extra backtest, 主包不含 vectorbt/numba/llvmlite
-        run: uv sync --no-dev --extra desktop --extra legacy-cpu
+        run: uv sync --frozen --no-dev --extra desktop --extra legacy-cpu
 
       - name: 安装 PyInstaller
         # 必须装进 backend 的 uv 环境 (pywebview/polars 等依赖都在那里),
@@ -141,7 +141,7 @@ jobs:
         # --project 的 venv 自动发现不可靠 (报 "No virtual environment found")。
         # 用 working-directory 进 backend 目录, 与上面 uv sync 的环境一致。
         working-directory: backend
-        run: uv pip install pyinstaller
+        run: uv pip install pyinstaller==6.22.3
 
       - name: 打包 (PyInstaller)
         # 在 backend 目录跑 (用该目录的 venv: pywebview/polars 等依赖)。
@@ -150,7 +150,7 @@ jobs:
         # SPECPATH 由 spec 文件位置决定 (packaging/tsp.spec → 项目根),
         # 与 cwd 无关, 故 frontend/dist、tiers.yaml 等相对路径仍正确。
         working-directory: backend
-        run: uv run pyinstaller ../packaging/tsp.spec --noconfirm
+        run: uv run --frozen --no-sync pyinstaller ../packaging/tsp.spec --noconfirm
 
       - name: 生成升级保护清单
         # 二次开发升级对比基线: 对打包产出的 _internal 全量文件做 sha256。
@@ -184,7 +184,10 @@ jobs:
       - name: 安装 Inno Setup (仅 Windows)
         if: matrix.platform == 'windows'
         # Inno Setup 6: 把 PyInstaller 产出封装成单文件安装包
-        run: choco install innosetup -y --no-progress
+        run: |
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup installation failed" }
+        shell: pwsh
 
       - name: 生成 Windows 安装包 (Inno Setup)
         if: matrix.platform == 'windows'
@@ -192,10 +195,31 @@ jobs:
         run: |
           $ver = (Get-Content frontend/package.json | ConvertFrom-Json).version
           echo "版本号: $ver"
-          ISCC.exe "/DMyAppVersion=$ver" packaging/tsp.iss
+          $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          $iscc = if ($compiler) { $compiler.Source } else { "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup compiler was not found" }
+          & $iscc "/DMyAppVersion=$ver" packaging/tsp.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }
           # 把生成的 Setup.exe 移到工作区根 (Release 上传用)
-          Move-Item packaging/Output/TSP-Setup-$ver.exe ${{ matrix.artifact }} -Force
+          Move-Item "packaging/Output/TSP-Setup-$ver.exe" $env:INSTALLER_FILE -Force
         shell: pwsh
+
+      - name: 验证 Windows 安装、真实窗口、扩展与覆盖升级
+        if: matrix.platform == 'windows'
+        working-directory: backend
+        shell: pwsh
+        run: |
+          uv run --frozen --no-sync python ../packaging/windows_installer_smoke.py --installer "../$env:INSTALLER_FILE" --staging dist/TSP --version $env:BUILD_VERSION --logs "$env:RUNNER_TEMP/tsp-smoke-logs"
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer verification failed; inspect the smoke logs artifact" }
+
+      - name: 保留 Windows 安装验证日志
+        if: always() && matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tsp-smoke-logs/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: 生成 DMG (macOS)
         if: matrix.platform == 'macos'
@@ -227,18 +251,59 @@ jobs:
           cd backend/dist
           tar -czf ../../${{ matrix.artifact }} TSP
 
-      - name: 上传产物为构建产物 (备查)
+      - name: 生成安装包校验值和源提交记录
+        working-directory: backend
+        shell: bash
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+        run: |
+          extra=()
+          if [ "$TARGET_PLATFORM" = windows ]; then
+            extra=(--smoke-report "$RUNNER_TEMP/tsp-smoke-logs/smoke-result.json")
+          fi
+          uv run --frozen --no-sync python ../packaging/write_build_record.py \
+            --artifact "../$INSTALLER_FILE" --version "$BUILD_VERSION" \
+            --platform "$TARGET_PLATFORM" "${extra[@]}"
+
+      - name: 上传已验证的安装包 (个人 fork 的最终交付)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}
+            ${{ matrix.artifact }}.sha256
+            ${{ matrix.artifact }}.build.json
+            docs/windows-personal-install.md
+          if-no-files-found: error
+          retention-days: 30
+
+  # 仅原作者仓库可发布。fork 无论输入什么值都不会运行具有写权限的 job。
+  publish:
+    if: github.repository == 'shy3130/tick-stock-panel'
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: 下载已经通过验证的构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
 
       - name: 上传到 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.version }}
+          target_commitish: ${{ github.sha }}
           name: ${{ github.event.inputs.version }}
-          files: ${{ matrix.artifact }}
+          files: |
+            ${{ matrix.artifact }}
+            ${{ matrix.artifact }}.sha256
+            ${{ matrix.artifact }}.build.json
+          fail_on_unmatched_files: true
           prerelease: ${{ github.event.inputs.prerelease }}
           generate_release_notes: true   # 自动从 commit 生成 changelog
           body: |
@@ -267,12 +332,11 @@ jobs:
 
   # 第三步: 生成 latest.json 更新清单 (客户端「检查更新」的稳定契约)
   manifest:
-    needs: build
-    # fail-fast: false 时部分平台失败会让 build 整体标红, 但已成功的平台资产
-    # 依然有效 — 清单照样生成 (以 Release 上实际存在的资产为准, 天然支持
-    # "今天发 Windows, 明天补 mac" 的分批发布: 每次按当前 Release 全量重建)。
-    if: ${{ !cancelled() && needs.build.result != 'skipped' }}
+    needs: publish
+    if: github.repository == 'shy3130/tick-stock-panel'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: 生成并上传 latest.json
         env:
