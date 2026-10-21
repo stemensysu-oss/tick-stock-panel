@@ -285,7 +285,14 @@ def _open_window(url: str) -> None:
     """主线程: 用 pywebview 打开桌面窗口。"""
     import webview  # type: ignore[import-not-found]
 
-    window = webview.create_window(
+    from app.config import settings
+
+    # 浏览器偏好随用户数据一起保留, 避免默认 private_mode 在退出时清空自选和列设置。
+    profile_dir = Path(settings.data_dir) / "webview"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    webview.settings["ALLOW_DOWNLOADS"] = True
+
+    webview.create_window(
         _APP_NAME,
         url,
         width=1440,
@@ -295,7 +302,7 @@ def _open_window(url: str) -> None:
         confirm_close=False,
     )
     # pywebview 会阻塞主线程直到窗口关闭
-    webview.start(debug=False)
+    webview.start(debug=False, private_mode=False, storage_path=str(profile_dir))
 
 
 def main() -> int:
