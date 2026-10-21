@@ -31,4 +31,22 @@ describe('可转债研究筛选与排序', () => {
     expect(filterConvertibles(rows, { ...filters, search: '000001.sz' })).toHaveLength(1)
     expect(filterConvertibles(rows, { ...filters, search: '测试正股' })[0].code).toBe('100001')
   })
+
+  it('按亿元筛选剩余本金，并组合评级、行业、收益率和剩余期限', () => {
+    const rows = [
+      item('100001', { outstanding_amount: 300_000_000, credit_rating: 'AA', industry: '制造业', ytm_pct: 3, remaining_years: 1.5 }),
+      item('100002', { outstanding_amount: 700_000_000, credit_rating: 'AA', industry: '制造业', ytm_pct: 4, remaining_years: 1 }),
+      item('100003', { outstanding_amount: 100_000_000, credit_rating: 'AA+', industry: '制造业', ytm_pct: 5, remaining_years: 1 }),
+      item('100004', { outstanding_amount: 100_000_000, credit_rating: 'AA', industry: '制造业', ytm_pct: null, remaining_years: 1 }),
+    ]
+    expect(filterConvertibles(rows, {
+      search: '', maxPrice: '', maxPremium: '', maxDoubleLow: '',
+      maxSize: '5', rating: 'AA', industry: '制造业', minYield: '2', maxYears: '2',
+    }).map(row => row.code)).toEqual(['100001'])
+  })
+
+  it('新增字段尚不存在的旧快照与显式null同样排最后，负收益率正常排序', () => {
+    const rows = [item('100001'), item('100002', { ytm_pct: -12 }), item('100003', { ytm_pct: 3 }), item('100004', { ytm_pct: null })]
+    expect(sortConvertibles(rows, 'ytm_pct', 'desc').map(row => row.code)).toEqual(['100003', '100002', '100001', '100004'])
+  })
 })
