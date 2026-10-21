@@ -57,55 +57,15 @@
 - [基金表现](https://fuyao.aicubes.cn/docs/api-reference/fund-performance/)：`/api/fund/performance/nav`
 - [基金持仓](https://fuyao.aicubes.cn/docs/api-reference/fund-holdings/)：`/api/fund/portfolio/holdings`
 
-## 可转债研究
+## 可转债工作台
 
-本版支持 **每张面值 100 元人民币的可转债**。数据来源为用户导入 CSV，价格均为未复权的元单位。页面明确标记导入来源和数据日期，不声称实时行情。
+可转债扩展已从基础 CSV 研究升级为多视图工作台，支持 **28 个显示字段、组合筛选、自选与排除名单、最多四只对比、散点图、强赎/回售观察、下修和公告记录**。详情支持现金流试算、税前到期收益率、回售情景收益率、纯债折现及简化欧式转股期权模型。
 
-### 导入步骤
+清单内转债及明确正股的报价可通过已有 TickFlow Key 更新；条款、评级、剩余规模、持仓及公告仍需独立输入。配置 Key 只表示存在配置，不代表实际行情权限已验证。页面不会伪造缺失字段。
 
-1. 从页面下载空 CSV 模板，用 UTF-8 编码、逗号分隔保存数据。
-2. 选择这批价格对应的数据日期，再上传文件或粘贴文本。同一批应采用一致的观察日期。
-3. 点击预览，检查识别字段、计算结果、警告和具体行错误。
-4. 确认后 **全量替换该研究清单**。需要保留的旧记录应包含在新 CSV 中；请自行保留原始 CSV 备份。
+CSV 更新同代码时保留研究记录，移出清单的条目会移除；完整 JSON 备份和校验恢复包含现金流、条款和公告。读写保持原子替换和版本冲突保护，旧 schema 1 清单兼容读取。自选与显示偏好仅保存在当前浏览器。
 
-预览不写入。修改文本或日期后必须重新预览。任何一行失败、重复代码、非法数值或日期都会阻止整批保存。预览后如清单已被另一操作修改，返回 409，要求重新预览。
-
-最大 2 MiB、2,000 条。支持 UTF-8 BOM 和中文常见表头。代码必须按文本保留六位数字，可带 `.SH/.SZ/.BJ`；不根据代码推断资产类型。
-
-| 英文字段 | 中文表头示例 | 说明 |
-| --- | --- | --- |
-| `code` | 转债代码、债券代码 | 必填，六位代码，保留前导零 |
-| `name` | 转债名称、债券名称 | 必填 |
-| `bond_price` | 转债价格、现价 | 每张转债价格，元 |
-| `stock_code` | 正股代码 | 可选 |
-| `stock_name` | 正股名称 | 可选 |
-| `stock_price` | 正股价格、正股价 | 未复权正股价格，元 |
-| `conversion_price` | 转股价、转股价格 | 当前有效转股价，元 |
-| `face_value` | 面值 | 只接受 100；留空时预览明确提示按 100 元 |
-| `maturity_date` | 到期日期、到期日 | `YYYY-MM-DD` |
-| `redemption_status` | 强赎状态、赎回状态 | 仅保存用户提供文字，缺失为未知 |
-
-未知价格请留空。零或负价格、`NaN`、无穷值不能作为有效计算输入。未识别字段会提示并忽略，派生指标始终由后端重算；导入其他工具导出的 CSV 前，应核对原始价格列名。
-
-### 指标计算
-
-```text
-转股价值 = 100 × 正股价格 ÷ 转股价
-转股溢价率（%） = (转债价格 ÷ 转股价值 − 1) × 100
-双低值 = 转债价格 + 转股溢价率的百分数值
-```
-
-例如，价格 120、正股价格 10、转股价 10，得到转股价值 100、溢价率 20%、双低值 140。双低是筛选约定，不是收益率。中间步骤不提前四舍五入，输出保留六位小数。缺少必要输入时指标为 `null`，筛选及排序不会将其视为零。
-
-支持搜索代码或名称、价格/溢价率/双低上限筛选，以及价格、溢价率、双低、到期日排序；未知值始终排后，每页 50 条。
-
-当前不提供自动报价、强赎触发判断、回售/下修条款、到期收益率或交易。强赎状态文字不能替代公告核对。
-
-### 存储和并发
-
-数据保存到现有 `data_dir` 下的 `custom/convertibles/snapshot.json`。服务端不保留平行内存缓存，每次读取持久快照，写入复用原子替换机制。确认导入前使用版本号校验，前端先取消旧查询再更新新快照，避免迟到响应覆盖页面。
-
-损坏文件、未知 schema、权限或磁盘错误会明确报错并拒绝覆盖。本版采用项目既有的单后端进程模式；没有实现多个独立服务进程同时写同一数据目录的跨进程锁。
+字段字典、完整使用步骤、计算口径、数据时间、接口和升级边界见 **[可转债工作台说明](convertibles-workbench.md)**。本部署仍仅支持每张面值 100 元人民币的清单；筛选和模型不构成交易指令。没有自动抓取集思录或已验证的全市场条款数据库。
 
 ## HTTP 接口
 
@@ -117,10 +77,16 @@
 | `GET /api/ext/funds/{ticker}/profile` | 基金资料 |
 | `GET /api/ext/funds/{ticker}/nav?range=year` | 历史净值 |
 | `GET /api/ext/funds/{ticker}/holdings` | 披露持仓 |
-| `GET /api/ext/convertibles` | 当前导入快照 |
+| `GET /api/ext/convertibles` | 当前清单、研究资料及重算指标 |
+| `GET /api/ext/convertibles/status` | 行情配置状态，不返回 Key |
+| `POST /api/ext/convertibles/refresh` | 刷新已有清单的债券及正股报价 |
 | `GET /api/ext/convertibles/template` | 空 CSV 模板 |
 | `POST /api/ext/convertibles/preview` | `{csv_text, as_of}`，只校验 |
 | `POST /api/ext/convertibles/import` | `{csv_text, as_of, expected_revision, confirmed:true}` |
+| `POST /api/ext/convertibles/{code}/analyze` | `{research, expected_revision?}`，只读试算 |
+| `PUT /api/ext/convertibles/{code}/research` | `{research, expected_revision}`，保存研究 |
+| `POST /api/ext/convertibles/restore/preview` | `{snapshot}`，校验完整备份 |
+| `POST /api/ext/convertibles/restore` | `{snapshot, expected_revision, confirmed:true}` |
 
 基金错误：配置缺失 503、无效 Key 或权限不足 403、标的不存在 404、参数或不支持的类型 422、限流 429、网络或响应格式异常 502。供应商原始错误正文不会直接返回给前端。
 
@@ -130,7 +96,7 @@
 
 - `backend/app/custom/funds/`
 - `backend/app/custom/convertibles.py`
-- `backend/app/services/convertibles_research.py`
+- `backend/app/services/convertibles_*.py`
 - `frontend/src/custom/funds/`
 - `frontend/src/custom/convertibles/`
 
@@ -138,9 +104,9 @@
 
 功能回滚可以回退本分支的功能提交；导入数据单独存放，代码回退不应删除用户数据。
 
-## 验证命令与限制
+## 首版验证记录与后续验证
 
-在安装仓库锁定依赖后执行：
+以下为基础版的验证记录；工作台新增测试命令见 [工作台说明](convertibles-workbench.md#验证)，本次最终结果见 [工作台交付记录](convertibles-workbench-delivery.md)。在安装仓库锁定依赖后执行：
 
 ```bash
 # backend/
@@ -155,10 +121,10 @@ pnpm build
 git diff --check
 ```
 
-2026-10-21 的最终验证：上述后端六个测试文件共 **167 项通过**；前端扩展注册及新增功能共 **18 项通过**；Ruff、TypeScript、Vite 构建和 `git diff --check` 通过。测试覆盖真实数值断言、单位日期归一、缺配置/无权限、无数据/异常响应、导入原子性、版本冲突与查询竞态。
+2026-10-21 基础版的历史验证：上述后端六个测试文件共 **167 项通过**；前端扩展注册及新增功能共 **18 项通过**；Ruff、TypeScript、Vite 构建和 `git diff --check` 通过。测试覆盖真实数值断言、单位日期归一、缺配置/无权限、无数据/异常响应、导入原子性、版本冲突与查询竞态。
 
 独立临时数据目录中的完整应用 HTTP 联调也通过：缺 Key 返回 503；预览不写入；120/10/10 的价格得到 100/20/140；缺值保留；确认导入后可读取；旧版本确认返回 409；非 100 元面值被拒绝；两个前端地址均返回页面。测试记录没有进入用户数据或提交内容。
 
 当前环境的 pnpm 外层会触发自动安装，受到运行环境限制；验证使用已安装的 `node_modules` 直接运行 Vitest、`tsc -b` 和 `vite build`，即 package script 的同一构建链。FastAPI TestClient 在隔离环境的线程事件循环中会挂起，使用可运行本地线程通信的执行环境后同一测试立即通过，未修改依赖或生产代码规避测试。
 
-尚未使用真实扶摇 Key 验证线上数据。完整应用 HTTP 路由已作本地检查；浏览器与本地服务处于不同环境，连接被拒绝，因此桌面/窄屏和双主题的实际视觉检查仍待完成。源码分支适合继续联调，尚未打包发布新的桌面安装包。
+基础版验证时未使用真实扶摇 Key，也没有新的桌面安装包。工作台版本的后续浏览器检查与数据源联调限制以交付记录为准。
