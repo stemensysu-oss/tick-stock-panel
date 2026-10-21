@@ -10,7 +10,7 @@
 ;   3. 产物: packaging\Output\TSP-Setup-x.x.x.exe
 ;
 ; 设计决策:
-;   - 装到用户目录 {localappdata}\Programs\ (不弹 UAC, 不需管理员)
+;   - 新装默认 D:\TSP, 无 D 盘时回退 {localappdata}\Programs\TSP; 升级沿用旧目录
 ;   - 用户数据存在 {app}\data\ (与程序同处一个总目录, 视觉直观)
 ;   - 卸载时询问是否删除用户数据 ({app}\data\)
 ;   - 覆盖安装(升级)不动 data\: Inno Setup 只写程序文件, data 不在安装清单
@@ -38,9 +38,9 @@ AppName={#MyAppName}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-; 默认装到 D 盘 (非系统盘), 用户可在向导中改任意位置
-; 若 D 盘不存在, [Code] 段 InitializeWizard 会自动回退到用户目录
-DefaultDirName=D:\TSP
+; 仅新装使用路径回退, 由 Inno Setup 优先保留旧安装目录或 /DIR 指定路径
+DefaultDirName={code:GetDefaultDirName}
+UsePreviousAppDir=yes
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=Output
@@ -82,7 +82,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; 把 PyInstaller 产出的整个文件夹搬进安装目录
 ; Source 路径相对于 .iss 文件所在目录
-Source: "..\backend\dist\TSP\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 试运行生成的根目录 data 和任意层级 .env 不能进入发布包; 依赖包自带的 data 不受影响
+Source: "..\backend\dist\TSP\*"; DestDir: "{app}"; Excludes: "\data,\data\*,.env"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 ; 开始菜单
@@ -93,12 +94,6 @@ Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-; 安装完成后启动应用
-; shellexec: 部分机器对 exe 路径存有「以管理员身份运行」兼容标志/策略要求提权,
-; CreateProcess 无法弹 UAC 会直接报错误码 740; ShellExecute 遇提权正常弹 UAC,
-; asInvoker 场景行为不变。
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent shellexec
-
 ; 安装完成后启动应用
 ; shellexec: 部分机器对 exe 路径存有「以管理员身份运行」兼容标志/策略要求提权,
 ; CreateProcess 无法弹 UAC 会直接报错误码 740; ShellExecute 遇提权正常弹 UAC,
@@ -139,23 +134,13 @@ begin
   end;
 end;
 
-// ── 启动时: 若 D 盘不存在, 回退默认路径到用户目录 ───────────────
-// 避免默认 D:\... 但系统没 D 盘时向导显示无效路径
-function InitializeSetup(): Boolean;
+// ── 新装默认目录: 不在 InitializeWizard 中覆盖已选定的升级路径 ──
+function GetDefaultDirName(Param: String): String;
 begin
-  Result := True;
-end;
-
-procedure InitializeWizard();
-var
-  DefaultDir: String;
-begin
-  // D 盘存在 → 用 D 盘; 否则回退用户目录 (无需管理员权限)
-  if not DirExists('D:\') then
-  begin
-    DefaultDir := ExpandConstant('{localappdata}\Programs\TSP');
-    WizardForm.DirEdit.Text := DefaultDir;
-  end;
+  if DirExists('D:\') then
+    Result := 'D:\TSP'
+  else
+    Result := ExpandConstant('{localappdata}\Programs\TSP');
 end;
 
 // ── 安装完成后: 通知外壳刷新图标缓存 ─────────────────────────────
