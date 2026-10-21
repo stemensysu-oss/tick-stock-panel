@@ -2330,9 +2330,122 @@ export interface UpgradeGuardStatus {
   pending_report?: UpgradeGuardReport | null
 }
 
+// ===== 基金 / 可转债研究扩展 =====
+export type FundNavRange = 'week' | 'month' | 'tmonth' | 'hyear' | 'year' | 'twoyear' | 'tyear' | 'fyear'
+
+export interface FundResearchStatus {
+  provider: 'fuyao'
+  configured: boolean
+  permission_status: 'unverified'
+  capabilities: ('profile' | 'nav' | 'holdings')[]
+  message: string
+}
+
+interface FundResponse {
+  ticker: string
+  provider: 'fuyao'
+  /** 数据源快照时间，不代表净值日或持仓披露日。 */
+  timestamp_ms: number | null
+}
+
+export interface FundProfileResponse extends FundResponse {
+  profile: {
+    fund_name: string | null
+    mgmt_name: string | null
+    manager_name: string | null
+    established_date: string | null
+    unit_nav: number | null
+  } | null
+}
+
+export interface FundNavItem {
+  date: string
+  unit_nav: number | null
+  /** 复权净值，不是累计净值。 */
+  adj_nav: number | null
+}
+
+export interface FundNavResponse extends FundResponse {
+  range: FundNavRange
+  items: FundNavItem[]
+}
+
+export interface FundHoldingsResponse extends FundResponse {
+  items: {
+    ticker: string
+    name: string | null
+    asset_type: string
+    /** 百分数口径：8.88 表示 8.88%。 */
+    weight_pct: number | null
+    report_date: string | null
+    publish_date: string | null
+  }[]
+  stock_ratio_pct: number | null
+  bond_ratio_pct: number | null
+  fund_ratio_pct: number | null
+}
+
+export interface ConvertibleItem {
+  code: string
+  name: string
+  stock_code: string | null
+  stock_name: string | null
+  bond_price: number | null
+  stock_price: number | null
+  conversion_price: number | null
+  face_value: number
+  maturity_date: string | null
+  redemption_status: string | null
+  conversion_value: number | null
+  /** 百分数口径：20 表示 20%。 */
+  conversion_premium_pct: number | null
+  /** 债券价格 + 转股溢价率百分数，不是收益率。 */
+  double_low: number | null
+}
+
+export interface ConvertibleDataset {
+  revision: string
+  as_of: string | null
+  updated_at: string | null
+  source: '用户导入'
+  items: ConvertibleItem[]
+}
+
+export interface ConvertibleImportInput {
+  csv_text: string
+  as_of: string
+}
+
+export interface ConvertiblePreview {
+  valid: boolean
+  total_rows: number
+  items: ConvertibleItem[]
+  errors: { row: number; field: string | null; message: string }[]
+  warnings: string[]
+  as_of: string
+  base_revision: string
+}
+
 // ===== API surface =====
 export const api = {
   health: () => request<{ status: string; version: string; mode: string }>('/health'),
+
+  fundResearchStatus: () => request<FundResearchStatus>('/api/ext/funds/status', { quiet: true }),
+  fundProfile: (ticker: string) =>
+    request<FundProfileResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/profile`, { quiet: true }),
+  fundNav: (ticker: string, range: FundNavRange) =>
+    request<FundNavResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/nav?range=${range}`, { quiet: true }),
+  fundHoldings: (ticker: string) =>
+    request<FundHoldingsResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/holdings`, { quiet: true }),
+  convertibles: () => request<ConvertibleDataset>('/api/ext/convertibles', { quiet: true }),
+  previewConvertibles: (input: ConvertibleImportInput) =>
+    request<ConvertiblePreview>('/api/ext/convertibles/preview', {
+      method: 'POST', body: JSON.stringify(input), quiet: true,
+    }),
+  importConvertibles: (input: ConvertibleImportInput & { expected_revision: string; confirmed: true }) =>
+    request<ConvertibleDataset>('/api/ext/convertibles/import', {
+      method: 'POST', body: JSON.stringify(input), quiet: true,
+    }),
 
   // ===== Auth (访问认证) =====
   authStatus: () =>
