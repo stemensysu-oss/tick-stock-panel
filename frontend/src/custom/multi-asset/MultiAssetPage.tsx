@@ -20,7 +20,7 @@ function Loading({ children }: { children: string }) {
 function CapabilityTable({ catalog }: { catalog: MultiAssetCatalog }) {
   return <details className="rounded-card border border-border bg-surface">
     <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-secondary">功能与数据能力一览 · {catalog.categories.length} 类资产</summary>
-    <p className="px-4 pb-3 text-xs leading-relaxed text-muted">行情按 TickFlow、扶摇、东方财富公开补充源的顺序获取。事件、净值与交易资格需要独立数据集；不抓取登录后的集思录数据。</p>
+    <p className="px-4 pb-3 text-xs leading-relaxed text-muted">行情优先 TickFlow、扶摇，失败后才使用公开补充源。事件、净值与交易资格需要独立数据集；不抓取登录后的集思录数据。</p>
     <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-xs"><caption className="sr-only">多资产功能与数据源矩阵</caption><thead className="border-y border-border bg-elevated/40 text-muted"><tr>{['类别', '研究能力', '当前数据', '研究字段的候选来源'].map(label => <th key={label} className="px-4 py-2.5 font-medium">{label}</th>)}</tr></thead><tbody className="divide-y divide-border/60">{catalog.categories.map(category => <tr key={category.id}><td className="whitespace-nowrap px-4 py-3 font-medium">{category.label}</td><td className="px-4 py-3 text-secondary">{category.description}</td><td className="px-4 py-3 text-muted">{category.live_status === 'available' ? '市场行情 / 用户导入 / 演示' : '用户导入 / 演示'}</td><td className="px-4 py-3 text-muted">{category.planned_sources.join('；')}</td></tr>)}</tbody></table></div>
   </details>
 }

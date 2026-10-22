@@ -18,7 +18,9 @@ def snapshot(category, *, force=False):
             code=row.symbol, name=row.name, currency='CNY',
             source_name=LABELS.get(row.source, row.source),
             source_url=(f'https://quote.eastmoney.com/{row.symbol[-2:].lower()}{row.symbol[:6]}.html'
-                        if row.source == PUBLIC else 'https://docs.tickflow.org/zh-Hans'),
+                        if row.source == PUBLIC else
+                        f'https://qt.gtimg.cn/q={row.symbol[-2:].lower()}{row.symbol[:6]}'
+                        if row.source == 'tencent_public' else 'https://docs.tickflow.org/zh-Hans'),
             as_of=row.quote_at[:10], price=row.price, price_as_of=row.quote_at[:10],
             notes=('当前债券市场清单仅覆盖沪深可转债，不是全债市。' if category == 'bonds'
                    else '仅场内货币 ETF 价格，不是收益率。' if category == 'cash'

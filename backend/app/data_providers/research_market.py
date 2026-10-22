@@ -30,7 +30,8 @@ FILTERS = {
     'indices': 'm:1 t:1,m:0 t:5',
 }
 UNIVERSES = {'bonds': 'CN_Bond', 'etf': 'CN_ETF', 'indices': 'CN_Index'}
-LABELS = {'tickflow': 'TickFlow', 'fuyao': '扶摇', PUBLIC: '东方财富公开补充源'}
+LABELS = {'tickflow': 'TickFlow', 'fuyao': '扶摇', PUBLIC: '东方财富公开补充源',
+          'tencent_public': '腾讯公开补充行情', 'sina_tencent_public': '公开备用目录与行情'}
 DISCLOSURE = '公开网页补充源可能延迟或中断；报价时间不等于抓取时间。未提供的净值、条款、收益率和公告保持未知。'
 _HTTP_LOCK = threading.Lock()
 _HTTP_NEXT: dict[str, float] = {}
@@ -91,7 +92,8 @@ def quote_time(value, *, milliseconds=False):
 class PublicHTTP:
     """Fixed public hosts only; no inherited authentication or credential logs."""
     hosts = frozenset({'push2.eastmoney.com', 'api.fund.eastmoney.com',
-                       'fundf10.eastmoney.com'})
+                       'fundf10.eastmoney.com', 'datacenter-web.eastmoney.com',
+                       'vip.stock.finance.sina.com.cn', 'qt.gtimg.cn'})
 
     def get(self, url, params=None):
         for attempt in range(2):
@@ -300,8 +302,11 @@ class FuyaoResearchProvider:
 
 class ResearchMarketService:
     def __init__(self, providers=None):
+        from app.data_providers.research_public_backup import PublicBackupProvider
+
         self.providers = providers if providers is not None else [
-            TickFlowResearchProvider(), FuyaoResearchProvider(), EastmoneyMarketProvider()]
+            TickFlowResearchProvider(), FuyaoResearchProvider(), EastmoneyMarketProvider(),
+            PublicBackupProvider()]
 
     def fetch(self, operation, argument):
         attempts, found = [], {}
@@ -329,7 +334,11 @@ class ResearchMarketService:
                 attempts.append({'provider': provider.name, 'status': 'failed'})
         if not found:
             raise ResearchSourceError('所有可用数据源均未返回有效行情；原数据已保留，请稍后重试或检查主 API 权限')
-        warnings = [DISCLOSURE] if any(r.source == PUBLIC for r in found.values()) else []
+        warnings = [DISCLOSURE] if any(r.source in {PUBLIC, 'tencent_public'} for r in found.values()) else []
+        if operation == 'market' and any(r.source == 'tencent_public' for r in found.values()):
+            warnings.append('公开备用行情只保留最近 30 天有来源时点的记录；现金管理仅两只代表货币 ETF，指数仅六只代表指数，均非全市场目录。')
+            warnings.extend(sorted({r.extra['coverage_note'] for r in found.values()
+                                    if r.extra.get('coverage_note')}))
         if requested is not None and requested - found.keys():
             warnings.append(f'{len(requested - found.keys())} 个标的未返回有效报价，未伪造价格。')
         return MarketBatch(list(found.values()), datetime.now(SH).isoformat(timespec='seconds'), attempts, warnings)

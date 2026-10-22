@@ -286,7 +286,7 @@ class ConvertibleQuoteService:
             configured=configured,
             mode="realtime" if configured else "unconfigured",
             message=(
-                "优先 TickFlow，再尝试扶摇支持的正股行情，最后使用东方财富公开补充源。空清单可获取市场列表；已有清单仅更新报价。条款与公告须独立核验。"
+                "优先 TickFlow，再尝试扶摇支持的正股行情，最后使用公开补充源（东方财富，异常时使用备用目录与腾讯报价）。空清单可获取市场列表；已有清单仅更新报价。条款与公告须独立核验。"
                 if self.provider.name == 'tickflow_fuyao_eastmoney' else
                 "已配置行情 Key；连接和标的权限将在刷新时验证。条款与公告仍需独立提供。"
                 if configured else f"尚未配置实时行情数据源。{KEY_SETUP_HINT}"
@@ -358,7 +358,7 @@ class ConvertibleQuoteService:
         try:
             return store.merge_quotes(
                 updates, expected_revision=expected_revision, as_of=max(quote_dates),
-                source=f"{current.source.partition(' + ')[0]} + {label} 行情",
+                source=f"{current.source.partition(' + ')[0]} + {label} 行情"[:100],
             )
         except ConvertibleConflictError:
             raise

@@ -1,4 +1,4 @@
-const SOURCES: Record<string, string> = { tickflow: 'TickFlow', fuyao: '扶摇', eastmoney_public: '东方财富公开补充源' }
+const SOURCES: Record<string, string> = { tickflow: 'TickFlow', fuyao: '扶摇', eastmoney_public: '东方财富公开补充源', tencent_public: '腾讯公开补充行情', sina_tencent_public: '公开备用目录与行情' }
 const STATES: Record<string, string> = { success: '返回数据', empty: '无有效数据', unconfigured: '未配置', unsupported: '当前未集成此数据集', failed: '请求失败' }
 
 export function SourceTrail({ data }: { data?: { provider?: string; attempts?: { provider: string; status: string }[]; warnings?: string[] } }) {

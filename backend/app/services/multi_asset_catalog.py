@@ -144,7 +144,7 @@ def catalog():
                            ['code', 'name', *item.pop('column_keys'), 'currency', 'as_of',
                             'source_name']]
         item['live_status'] = 'available' if item['id'] in FILTERS else 'unavailable'
-        item['notes'].append('市场行情按 TickFlow → 扶摇 → 东方财富公开补充源尝试；仅集成能力范围内的字段。导入与虚构演示不视为已验证行情。')
+        item['notes'].append('市场行情按 TickFlow → 扶摇 → 公开补充源（东方财富，异常时备用目录与腾讯报价）尝试；仅集成能力范围内的字段。导入与虚构演示不视为已验证行情。')
         categories.append(item)
     return dict(schema_version=1, categories=categories, existing_modules=[
         dict(label='基金研究', path='/funds'),

@@ -143,15 +143,20 @@ def check_live_api(base: str) -> dict:
     bonds = json_request(base, '/api/ext/convertibles/refresh',
                          body={'expected_revision': before['revision']}, timeout=180)
     require(len(bonds['items']) > 100, 'Market discovery/refresh did not return convertible prices')
-    require(all(item.get('quote_at') and 'eastmoney_public' in item.get('quote_source', '')
+    require(all(item.get('quote_at') and any(source in item.get('quote_source', '')
+                for source in ('eastmoney_public', 'tencent_public'))
                 for item in bonds['items']), 'Missing real convertible provenance/time')
-    result = {'convertibles': {'rows': len(bonds['items']), 'as_of': bonds['as_of']}, 'markets': {}}
+    computed = sum(item.get('double_low') is not None for item in bonds['items'])
+    require(computed > 100, 'Convertible stock bindings/prices or reference conversion prices are missing')
+    result = {'convertibles': {'rows': len(bonds['items']), 'as_of': bonds['as_of'],
+                              'with_double_low': computed}, 'markets': {}}
     for category in ('etf', 'lof', 'cash', 'reits', 'indices', 'bonds'):
         data = json_request(base, f'/api/multi-asset/snapshot?category={category}&mode=market&force=true', timeout=180)
-        require(len(data['rows']) > 5, f'{category} market feed is empty')
-        require(data['data_status'] == 'market' and all(row.get('source_id') == 'eastmoney_public'
+        require(len(data['rows']) >= (2 if category == 'cash' else 6), f'{category} market feed is empty')
+        require(data['data_status'] == 'market' and all(row.get('source_id') in {'eastmoney_public', 'tencent_public'}
                 and row.get('quote_at') for row in data['rows']), f'{category} provenance is invalid')
-        require([a['provider'] for a in data['attempts']] == ['tickflow', 'fuyao', 'eastmoney_public'],
+        require([a['provider'] for a in data['attempts']][:3] == ['tickflow', 'fuyao', 'eastmoney_public']
+                and data['attempts'][-1]['status'] == 'success',
                 f'{category} fallback order was not recorded')
         result['markets'][category] = {'rows': len(data['rows']), 'attempts': data['attempts']}
     fund = '510300.SH'

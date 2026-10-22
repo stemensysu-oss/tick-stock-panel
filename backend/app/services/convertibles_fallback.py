@@ -12,6 +12,7 @@ from app.data_providers.research_market import (
     market_batch,
     number,
 )
+from app.data_providers.research_public_backup import bond_metadata
 from app.services.convertibles_models import ConvertibleItem
 from app.services.convertibles_research import ConvertibleConflictError
 from app.services.convertibles_sources import (
@@ -47,15 +48,18 @@ class FallbackConvertibleProvider:
             # conversion terms. Fill only that unsupported metadata capability;
             # the primary provider's successful prices and timestamps stay intact.
             metadata = {}
-            if any(row.source != PUBLIC for row in batch.rows):
+            if any(not row.extra and row.source != PUBLIC for row in batch.rows):
                 # Price-only discovery is useful even if reference terms fail.
                 with suppress(ResearchSourceError):
-                    metadata = {row.symbol: row for row in EastmoneyMarketProvider().market('bonds')}
+                    metadata = {row.symbol: row.extra for row in EastmoneyMarketProvider().market('bonds')}
+                if not metadata:
+                    with suppress(ResearchSourceError):
+                        metadata = bond_metadata()
             items = []
             for row in batch.rows:
                 # The public market feed supplies an explicit bond -> stock binding.
                 # No binding/terms are inferred from a security's name or neighboring code.
-                extra = metadata[row.symbol].extra if row.symbol in metadata else row.extra
+                extra = metadata.get(row.symbol, row.extra)
                 stock_code = extra.get('f232')
                 try:
                     stock_code = normalize_symbol(stock_code, kind='stock') if stock_code else None
