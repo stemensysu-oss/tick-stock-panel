@@ -75,6 +75,7 @@ class PublicFundDisclosures:
         _url, html = self._page('fhsp', ticker)
         items = []
         found = False
+        explicit_empty = False
         for table in re.findall(r'<table\b.*?</table>', html, re.S):
             parser = Table()
             parser.feed(table)
@@ -86,13 +87,16 @@ class PublicFundDisclosures:
                 continue
             found = True
             for row in parser.rows[1:]:
-                # Empty-table notices are not zero-valued dividend events.
+                # A header-only/error template is not proof of an empty history.
+                # This exact no-record marker is observed on e.g. 000009; a
+                # generic "暂无数据" can instead be a temporary service failure.
+                if len(row) == 1 and re.fullmatch(r'暂无分红信息[!！]?', row[0][0]):
+                    explicit_empty = True
+                    continue
                 if len(row) != len(headers):
-                    if any('暂无' in c[0] for c in row):
-                        continue
                     raise FundDataError(502, '公开分红表格结构异常')
                 values = {h: row[headers.index(h)][0] for h in required}
-                match = re.fullmatch(r'每10份派现金([\d.]+)元', values['每10份分红'])
+                match = re.fullmatch(r'每10份派现金(\d+(?:\.\d+)?)元', values['每10份分红'])
                 if not match:
                     raise FundDataError(502, '公开分红缺少可核对的每10份现金口径')
                 items.append(FundDividend(per_ten_cash_before_tax=number(match[1]),
@@ -100,6 +104,11 @@ class PublicFundDisclosures:
                     payment_date=day(values['分红发放日']), progress='公开披露'))
         if not found:
             raise FundDataError(502, '公开分红表头已变化，本次结果未采用')
+        if not items and not explicit_empty:
+            raise FundDataError(502, '公开分红页面未返回记录或明确的无记录标识，本次结果未采用')
+        summary = re.search(r'累计分红\s*(\d+(?:\.\d+)?)\s*元/份', html)
+        if explicit_empty and (items or (summary and number(summary[1]) > 0)):
+            raise FundDataError(502, '公开分红页面的空记录与分红披露互相矛盾，本次结果未采用')
         return FundDividendsResponse(**self.parent.meta(ticker), items=items,
             warnings=['每10份现金分红，非每份；公开页面未提供公告日、税后口径和完整性证明。不自动据此计算复权净值或总回报。'])
 

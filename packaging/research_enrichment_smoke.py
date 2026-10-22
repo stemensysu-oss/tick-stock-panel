@@ -16,6 +16,8 @@ def check_enrichment(base, request, require):
     require(trading['daily_purchase_limit']['status'] in {'finite', 'unlimited'}, 'Purchase limit unavailable')
     require(trading['minimum_purchase']['unit'] == 'CNY' and trading['minimum_redemption']['unit'] == 'units', 'Trading units wrong')
     dividends = get('/api/ext/funds/510300.SH/dividends')
+    first_cash = dividends['items'][0].get('per_ten_cash_before_tax') if dividends['items'] else None
+    print(f"Installed fund dividend evidence: provider={dividends.get('provider')}, rows={len(dividends['items'])}, first_per_ten_cash={first_cash}", flush=True)
     require(len(dividends['items']) >= 10 and dividends['items'][0]['per_ten_cash_before_tax'] is not None, 'Historical fund dividends missing')
     holdings = get('/api/ext/funds/000001.OF/holdings?asset_type=bond&report_date=2026-06-30')
     require(bool(holdings['items']) and all(h['asset_type'] == 'bond' and h['report_date'] == '2026-06-30'

@@ -88,3 +88,70 @@ def test_public_holdings_does_not_guess_hk_market_from_five_digits():
     raw = 'var apidata={content:' + json.dumps(html) + ',arryear:[2026]};'
     result = EastmoneyFundProvider(HTTP(lambda *args: raw)).holdings('000001.OF')
     assert result.items[0].ticker == '00700'
+
+
+DIVIDEND_HEADERS = ('<table><tr><th>年份</th><th>权益登记日</th><th>除息日</th>'
+    '<th>每10份分红</th><th>分红发放日</th></tr>')
+
+
+@pytest.mark.parametrize('body', ['', '<tr><td colspan="5">暂无数据，请稍后再试</td></tr>'])
+def test_public_dividend_header_only_or_ambiguous_notice_is_not_valid_empty(body):
+    from test_fund_enrichment import HTTP
+
+    html = '<title>合成基金(510300)</title>' + DIVIDEND_HEADERS + body + '</table>'
+    source = EastmoneyFundProvider(HTTP(lambda *args: html))
+    with pytest.raises(FundDataError, match='分红') as error:
+        source.dividends('510300.SH')
+    assert error.value.status_code == 502
+
+
+def test_public_dividend_observed_empty_marker_remains_an_explicit_empty_dataset():
+    from test_fund_enrichment import HTTP
+
+    html = ('<title>合成基金(000009)</title>' + DIVIDEND_HEADERS
+        + '<tr><td colspan="5">暂无分红信息!</td></tr></table>')
+    result = EastmoneyFundProvider(HTTP(lambda *args: html)).dividends('000009.OF')
+    assert result.items == []
+
+
+@pytest.mark.parametrize('contradiction', [
+    '<label>2026年度 合成基金 累计分红0.123元/份。</label>',
+    (DIVIDEND_HEADERS + '<tr><td>2026年</td><td>2026-01-16</td><td>2026-01-19</td>'
+     '<td>每10份派现金1.2300元</td><td>2026-01-27</td></tr></table>'),
+])
+def test_public_dividend_empty_marker_cannot_hide_positive_summary_or_event(contradiction):
+    from test_fund_enrichment import HTTP
+
+    html = ('<title>合成基金(510300)</title>' + contradiction + DIVIDEND_HEADERS
+        + '<tr><td colspan="5">暂无分红信息!</td></tr></table>')
+    with pytest.raises(FundDataError, match='分红'):
+        EastmoneyFundProvider(HTTP(lambda *args: html)).dividends('510300.SH')
+
+
+@pytest.mark.parametrize('cash', ['.', '1..2'])
+def test_public_dividend_invalid_decimal_is_a_safe_data_error(cash):
+    from test_fund_enrichment import HTTP
+
+    html = ('<title>合成基金(510300)</title>' + DIVIDEND_HEADERS
+        + '<tr><td>2026年</td><td>2026-01-16</td><td>2026-01-19</td>'
+        + f'<td>每10份派现金{cash}元</td><td>2026-01-27</td></tr></table>')
+    with pytest.raises(FundDataError, match='每10份现金'):
+        EastmoneyFundProvider(HTTP(lambda *args: html)).dividends('510300.SH')
+
+
+@pytest.mark.parametrize(('body', 'status'), [
+    ('', 502), ('<tr><td colspan="5">暂无分红信息!</td></tr>', 200),
+])
+def test_dividend_api_distinguishes_malformed_empty_from_explicit_no_record(monkeypatch, body, status):
+    from test_custom_funds import _client
+    from test_fund_enrichment import HTTP
+
+    html = '<title>合成基金(000009)</title>' + DIVIDEND_HEADERS + body + '</table>'
+    source = FallbackFundProvider(fallback=EastmoneyFundProvider(HTTP(lambda *args: html)), key_getter=lambda: '')
+    response = _client(monkeypatch, source).get('/api/ext/funds/000009.OF/dividends')
+    assert response.status_code == status
+    if status == 200:
+        assert response.json()['items'] == []
+    else:
+        assert 'detail' in response.json()
+        assert '<title>' not in response.text
