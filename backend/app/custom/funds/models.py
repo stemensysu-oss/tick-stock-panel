@@ -11,6 +11,7 @@ NAV_RANGES = frozenset({"week", "month", "tmonth", "hyear", "year", "twoyear", "
 class FundStatus(BaseModel):
     provider: str = "fuyao"
     configured: bool
+    primary_configured: bool = False
     permission_status: Literal["unverified"] = "unverified"
     capabilities: list[str] = Field(default_factory=lambda: ["profile", "nav", "holdings"])
     message: str
@@ -21,6 +22,8 @@ class FundSnapshot(BaseModel):
     provider: str
     # Source snapshot/assembly time, NOT the NAV date or disclosure date.
     timestamp_ms: int | None = None
+    warnings: list[str] = Field(default_factory=list)
+    attempts: list[dict] = Field(default_factory=list)
 
 
 class FundProfile(BaseModel):

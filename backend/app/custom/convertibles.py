@@ -11,6 +11,7 @@ from app.extensions import (
     BackendExtensionRegistrar,
     ExtensionContext,
 )
+from app.services.convertibles_fallback import FallbackConvertibleProvider
 from app.services.convertibles_research import (
     CSV_TEMPLATE,
     MAX_CSV_BYTES,
@@ -28,7 +29,6 @@ from app.services.convertibles_sources import (
     ConvertibleDataError,
     ConvertibleQuoteService,
     ConvertibleSourceStatus,
-    TickFlowConvertibleProvider,
 )
 
 EXTENSION_ID = "research.convertibles"
@@ -89,7 +89,7 @@ ServiceDependency = Annotated[ConvertibleService, Depends(get_service)]
 def get_quote_service() -> ConvertibleQuoteService:
     # Configuration is read per request so saving a new key takes effect without
     # reopening the extension, and status never performs a network probe.
-    return ConvertibleQuoteService(TickFlowConvertibleProvider())
+    return ConvertibleQuoteService(FallbackConvertibleProvider())
 
 
 QuoteServiceDependency = Annotated[ConvertibleQuoteService, Depends(get_quote_service)]

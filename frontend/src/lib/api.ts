@@ -2334,7 +2334,7 @@ export interface UpgradeGuardStatus {
 export type FundNavRange = 'week' | 'month' | 'tmonth' | 'hyear' | 'year' | 'twoyear' | 'tyear' | 'fyear'
 
 export interface FundResearchStatus {
-  provider: 'fuyao'
+  provider: string
   configured: boolean
   permission_status: 'unverified'
   capabilities: ('profile' | 'nav' | 'holdings')[]
@@ -2342,8 +2342,10 @@ export interface FundResearchStatus {
 }
 
 interface FundResponse {
+  warnings?: string[]
+  attempts?: { provider: string; status: string }[]
   ticker: string
-  provider: 'fuyao'
+  provider: string
   /** 数据源快照时间，不代表净值日或持仓披露日。 */
   timestamp_ms: number | null
 }
@@ -2522,7 +2524,7 @@ export interface ConvertiblePreview {
 }
 
 // 多资产研究：只读演示与用户导入快照隔离；不存在隐式实时行情回退。
-export type MultiAssetMode = 'imported' | 'demo'
+export type MultiAssetMode = 'imported' | 'demo' | 'market'
 export interface MultiAssetColumn {
   key: string
   label: string
@@ -2539,7 +2541,7 @@ export interface MultiAssetCategory {
   columns: MultiAssetColumn[]
   notes: string[]
   planned_sources: string[]
-  live_status: 'unavailable'
+  live_status: 'unavailable' | 'available'
 }
 export interface MultiAssetCatalog {
   schema_version: 1
@@ -2559,13 +2561,14 @@ export interface MultiAssetRow {
   [key: string]: string | number | null | undefined | Record<string, number | null> | string[]
 }
 export interface MultiAssetSnapshot {
+  attempts?: { provider: string; status: string }[]
   schema_version: 1
   category: string
   mode: MultiAssetMode
   revision: string
   updated_at: string | null
   data_status: 'empty' | MultiAssetMode
-  live_status: 'unavailable'
+  live_status: 'unavailable' | 'available'
   rows: MultiAssetRow[]
   warnings: string[]
 }
@@ -2577,7 +2580,7 @@ export const api = {
   health: () => request<{ status: string; version: string; mode: string }>('/health'),
 
   multiAssetCatalog: () => request<MultiAssetCatalog>('/api/multi-asset/catalog', { quiet: true }),
-  multiAssetSnapshot: (category: string, mode: MultiAssetMode) => request<MultiAssetSnapshot>(`/api/multi-asset/snapshot?category=${encodeURIComponent(category)}&mode=${mode}`, { quiet: true }),
+  multiAssetSnapshot: (category: string, mode: MultiAssetMode, force = false) => request<MultiAssetSnapshot>(`/api/multi-asset/snapshot?category=${encodeURIComponent(category)}&mode=${mode}&force=${force}`, { quiet: true, timeoutMs: 120_000 }),
   previewMultiAssetImport: (input: MultiAssetImportInput) => request<MultiAssetImportPreview>('/api/multi-asset/import/preview', { method: 'POST', body: JSON.stringify(input), quiet: true }),
   importMultiAsset: (input: MultiAssetImportInput & { confirmed: true }) => request<MultiAssetSnapshot>('/api/multi-asset/import', { method: 'POST', body: JSON.stringify(input), quiet: true }),
   multiAssetTemplate: (category: string) => request<string>(`/api/multi-asset/template?category=${encodeURIComponent(category)}`, { quiet: true }, response => response.text()),
@@ -2585,11 +2588,11 @@ export const api = {
 
   fundResearchStatus: () => request<FundResearchStatus>('/api/ext/funds/status', { quiet: true }),
   fundProfile: (ticker: string) =>
-    request<FundProfileResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/profile`, { quiet: true }),
+    request<FundProfileResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/profile`, { quiet: true, timeoutMs: 120_000 }),
   fundNav: (ticker: string, range: FundNavRange) =>
-    request<FundNavResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/nav?range=${range}`, { quiet: true }),
+    request<FundNavResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/nav?range=${range}`, { quiet: true, timeoutMs: 120_000 }),
   fundHoldings: (ticker: string) =>
-    request<FundHoldingsResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/holdings`, { quiet: true }),
+    request<FundHoldingsResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/holdings`, { quiet: true, timeoutMs: 120_000 }),
   convertibles: () => request<ConvertibleDataset>('/api/ext/convertibles', { quiet: true }),
   convertibleSourceStatus: () => request<ConvertibleSourceStatus>('/api/ext/convertibles/status', { quiet: true }),
   previewConvertibleRestore: (input: { snapshot: ConvertibleDataset }) =>
@@ -2602,7 +2605,7 @@ export const api = {
     }),
   refreshConvertibles: (input: { expected_revision: string }) =>
     request<ConvertibleDataset>('/api/ext/convertibles/refresh', {
-      method: 'POST', body: JSON.stringify(input), quiet: true,
+      method: 'POST', body: JSON.stringify(input), quiet: true, timeoutMs: 120_000,
     }),
   analyzeConvertible: (code: string, research: ConvertibleResearch, expectedRevision: string) =>
     request<ConvertibleItem>(`/api/ext/convertibles/${encodeURIComponent(code)}/analyze`, {

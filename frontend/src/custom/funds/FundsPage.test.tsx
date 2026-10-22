@@ -67,9 +67,10 @@ it('未配置数据源时禁用查询，不调用付费数据接口', async () =
   expect(mocks.holdings).not.toHaveBeenCalled()
 })
 
-it('未选择基金不查询；切换区间后迟到响应不会冒充当前区间数据', async () => {
+it('首次自动查询示例基金；切换代码和区间后迟到响应不会冒充当前数据', async () => {
   await render()
-  expect(mocks.nav).not.toHaveBeenCalled()
+  expect(mocks.nav).toHaveBeenCalledWith('510300.SH', 'year')
+  mocks.pending.length = 0
   await enterTicker('000001.of')
   expect(mocks.nav).toHaveBeenCalledWith('000001.OF', 'year')
   const monthButton = [...host.querySelectorAll('button')].find(button => button.textContent === '近一月')!

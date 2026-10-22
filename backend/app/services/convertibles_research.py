@@ -296,6 +296,15 @@ class ConvertibleService:
         snapshot.items = [calculate_metrics(item, snapshot.as_of) for item in snapshot.items]
         return snapshot
 
+    def initialize_market(self, items, as_of, source, *, expected_revision):
+        # Only an empty snapshot can be seeded. Never replace imported research.
+        current = self._load()
+        if current.revision != expected_revision or current.items:
+            raise ConvertibleConflictError("清单已变化，请重新读取；市场初始化不会覆盖已有研究")
+        candidate = ConvertibleSnapshot(as_of=as_of, source=f"市场清单 · {source}",
+                                        items=[calculate_metrics(item, as_of) for item in items])
+        return self._commit(candidate, expected_revision)
+
     def preview(self, csv_text: str, as_of: str) -> ImportPreview:
         return self._preserve_research(parse_csv(csv_text, as_of), self._load())
 

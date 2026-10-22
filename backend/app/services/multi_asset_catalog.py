@@ -135,6 +135,7 @@ def field_metadata(key, category=None):
 
 
 def catalog():
+    from app.data_providers.research_market import FILTERS
     categories = []
     for raw in _CATEGORIES:
         item = deepcopy(raw)
@@ -142,7 +143,8 @@ def catalog():
         item['columns'] = [field_metadata(key, item['id']) for key in
                            ['code', 'name', *item.pop('column_keys'), 'currency', 'as_of',
                             'source_name']]
-        item['notes'].append(_DISCLOSURE)
+        item['live_status'] = 'available' if item['id'] in FILTERS else 'unavailable'
+        item['notes'].append('市场行情按 TickFlow → 扶摇 → 东方财富公开补充源尝试；仅集成能力范围内的字段。导入与虚构演示不视为已验证行情。')
         categories.append(item)
     return dict(schema_version=1, categories=categories, existing_modules=[
         dict(label='基金研究', path='/funds'),

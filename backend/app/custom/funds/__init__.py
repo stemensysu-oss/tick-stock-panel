@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.custom.funds.fallback import FallbackFundProvider
 from app.custom.funds.models import (
     FundHoldingsResponse,
     FundNavResponse,
@@ -11,7 +12,7 @@ from app.custom.funds.models import (
     FundStatus,
     NavRange,
 )
-from app.custom.funds.provider import FUND_KEY_SETUP_HINT, FuyaoFundProvider, get_api_key
+from app.custom.funds.provider import get_api_key
 from app.custom.funds.service import FundDataError, FundResearchService
 from app.extensions import BACKEND_EXTENSION_API_VERSION, BackendExtensionRegistrar
 
@@ -23,17 +24,18 @@ router = APIRouter(prefix="/api/ext/funds", tags=["fund-research"])
 
 def get_service() -> FundResearchService:
     # Read credentials per request so changing the existing setting takes effect immediately.
-    return FundResearchService(FuyaoFundProvider(get_api_key()))
+    return FundResearchService(FallbackFundProvider())
 
 
 @router.get("/status", response_model=FundStatus)
 def status() -> FundStatus:
     configured = bool(get_api_key())
     return FundStatus(
-        configured=configured,
+        configured=True,
+        primary_configured=configured,
+        provider="fuyao_then_eastmoney",
         message=(
-            "已配置扶摇 API Key；各基金接口权限将在查询时验证"
-            if configured else FUND_KEY_SETUP_HINT
+            "基金资料、净值和持仓优先扶摇；无配置、失败或空结果时使用东方财富公开补充源。TickFlow 当前未集成这些基金数据集。"
         ),
     )
 

@@ -204,9 +204,9 @@ def test_extension_loads_without_key_and_api_reports_configuration(monkeypatch: 
     client = _client(monkeypatch, FuyaoFundProvider(""))
     response = client.get("/api/ext/funds/status")
     assert response.status_code == 200
-    assert response.json()["configured"] is False
+    assert response.json()["configured"] is True
     assert response.json()["permission_status"] == "unverified"
-    assert "FUYAO_API_KEY" in response.json()["message"]
+    assert "公开补充源" in response.json()["message"]
     for endpoint in ["profile", "nav", "holdings"]:
         response = client.get(f"/api/ext/funds/025480.OF/{endpoint}")
         assert response.status_code == 503
@@ -220,7 +220,7 @@ def test_api_success_empty_validation_and_source_error(monkeypatch: pytest.Monke
     assert client.get("/api/ext/funds/025480.OF/profile").json()["profile"] is None
     assert client.get("/api/ext/funds/025480.OF/nav?range=month").json() == {
         "ticker": "025480.OF", "provider": "fuyao", "timestamp_ms": None,
-        "range": "month", "items": [],
+        "range": "month", "items": [], "warnings": [], "attempts": [],
     }
     assert client.get("/api/ext/funds/510300/nav").status_code == 422
     assert client.get("/api/ext/funds/510300.SH/nav?range=decade").status_code == 422

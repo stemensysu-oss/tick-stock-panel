@@ -19,7 +19,7 @@ import traceback
 from contextlib import suppress
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import ProxyHandler, build_opener
+from urllib.request import ProxyHandler, Request, build_opener
 
 import psutil
 from write_build_record import file_sha256
@@ -113,10 +113,12 @@ def run_installer(installer: Path, destination: Path | None, log: Path) -> None:
         tree.stop()
 
 
-def json_request(base: str, route: str) -> dict:
+def json_request(base: str, route: str, *, body=None, timeout=3) -> dict:
     # A machine-wide proxy must not send local smoke traffic outside the runner.
     opener = build_opener(ProxyHandler({}))
-    with opener.open(base + route, timeout=3) as response:
+    request = Request(base + route, data=json.dumps(body).encode() if body is not None else None,
+                      headers={'Content-Type': 'application/json'})
+    with opener.open(request, timeout=timeout) as response:
         require(response.status == 200, f"{route}: expected HTTP 200")
         require(response.headers.get_content_type() == "application/json", f"{route}: not JSON (possibly SPA fallback)")
         result = json.load(response)
@@ -128,11 +130,44 @@ def check_api(base: str, version: str) -> None:
     health = json_request(base, "/health")
     require(health.get("status") == "ok" and health.get("version") == version, "Wrong application health/version")
     snapshot = json_request(base, "/api/ext/convertibles")
-    require(snapshot.get("items") == [] and bool(snapshot.get("revision")), "Convertible extension did not start with an empty snapshot")
+    require(isinstance(snapshot.get("items"), list) and bool(snapshot.get("revision")), "Convertible extension snapshot is invalid")
     convertibles = json_request(base, "/api/ext/convertibles/status")
-    require(convertibles.get("provider") == "tickflow" and convertibles.get("configured") is False, "Unexpected convertible provider/configuration")
+    require(convertibles.get("provider") == "tickflow_fuyao_eastmoney" and convertibles.get("configured") is True, "Convertible fallback path is unavailable")
     funds = json_request(base, "/api/ext/funds/status")
-    require(funds.get("provider") == "fuyao" and funds.get("configured") is False, "Fund extension missing or unexpectedly configured")
+    require(funds.get("provider") == "fuyao_then_eastmoney" and funds.get("configured") is True, "Fund fallback path is unavailable")
+
+
+def check_live_api(base: str) -> dict:
+    """No credentials. Exercise real public fallback in the INSTALLED application."""
+    before = json_request(base, '/api/ext/convertibles')
+    bonds = json_request(base, '/api/ext/convertibles/refresh',
+                         body={'expected_revision': before['revision']}, timeout=180)
+    require(len(bonds['items']) > 100, 'Market discovery/refresh did not return convertible prices')
+    require(all(item.get('quote_at') and 'eastmoney_public' in item.get('quote_source', '')
+                for item in bonds['items']), 'Missing real convertible provenance/time')
+    result = {'convertibles': {'rows': len(bonds['items']), 'as_of': bonds['as_of']}, 'markets': {}}
+    for category in ('etf', 'lof', 'cash', 'reits', 'indices', 'bonds'):
+        data = json_request(base, f'/api/multi-asset/snapshot?category={category}&mode=market&force=true', timeout=180)
+        require(len(data['rows']) > 5, f'{category} market feed is empty')
+        require(data['data_status'] == 'market' and all(row.get('source_id') == 'eastmoney_public'
+                and row.get('quote_at') for row in data['rows']), f'{category} provenance is invalid')
+        require([a['provider'] for a in data['attempts']] == ['tickflow', 'fuyao', 'eastmoney_public'],
+                f'{category} fallback order was not recorded')
+        result['markets'][category] = {'rows': len(data['rows']), 'attempts': data['attempts']}
+    fund = '510300.SH'
+    profile = json_request(base, f'/api/ext/funds/{fund}/profile', timeout=180)
+    nav = json_request(base, f'/api/ext/funds/{fund}/nav?range=year', timeout=180)
+    holdings = json_request(base, f'/api/ext/funds/{fund}/holdings', timeout=180)
+    require(bool(profile.get('profile', {}).get('fund_name')), 'Fund profile is empty')
+    require(len(nav.get('items', [])) > 100, 'Fund NAV missing or silently truncated to one page')
+    require(all(point.get('adj_nav') is None for point in nav['items']), 'Cumulative NAV mislabeled as adjusted NAV')
+    require(bool(holdings.get('items')), 'Published fund holdings missing')
+    require(all(response.get('provider') == 'eastmoney_public' for response in (profile, nav, holdings)),
+            'Fund provenance is incorrect')
+    result['fund'] = {'ticker': fund, 'nav_rows': len(nav['items']),
+                      'last_nav_date': nav['items'][-1]['date'], 'holdings': len(holdings['items']),
+                      'report_date': holdings['items'][0]['report_date'], 'source': profile['provider']}
+    return result
 
 
 def clean_environment(data_dir: Path, cwd: Path) -> dict[str, str]:
@@ -195,7 +230,9 @@ def run_desktop(executable: Path, data_dir: Path, cwd: Path, version: str, log: 
                     if time.monotonic() - gui_ready_at >= 10:
                         check_api(base, version)
                         require((data_dir / "webview").is_dir(), "Persistent WebView profile was not created in DATA_DIR")
-                        return {"health": True, "funds_api": True, "convertibles_api": True, "visible_window": True, "webview2": True}
+                        live = check_live_api(base)
+                        return {"health": True, "funds_api": True, "convertibles_api": True,
+                                "visible_window": True, "webview2": True, "verified_live_fallback": live}
                 else:
                     gui_ready_at = None
                     if base:

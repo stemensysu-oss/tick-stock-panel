@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.data_providers.research_market import ResearchSourceError
 from app.extensions import (
     BACKEND_EXTENSION_API_VERSION,
     BackendExtensionRegistrar,
@@ -20,6 +21,7 @@ from app.services.multi_asset import (
     csv_template,
 )
 from app.services.multi_asset_catalog import catalog
+from app.services.multi_asset_market import snapshot as market_snapshot
 
 EXTENSION_ID = 'research.multi_asset'
 EXTENSION_API_VERSION = BACKEND_EXTENSION_API_VERSION
@@ -63,6 +65,8 @@ def _call(callback, *args, **kwargs):
         raise HTTPException(422, str(exc)) from exc
     except MultiAssetStoreError as exc:
         raise HTTPException(503, str(exc)) from exc
+    except ResearchSourceError as exc:
+        raise HTTPException(502, str(exc)) from None
 
 
 def _download(csv_text, filename):
@@ -79,7 +83,9 @@ def setup(registrar: BackendExtensionRegistrar) -> None:
 
     @router.get('/snapshot')
     def snapshot(category: CategoryQuery, service: ServiceDependency,
-                 mode: Literal['imported', 'demo'] = 'imported'):
+                 mode: Literal['imported', 'demo', 'market'] = 'imported', force: bool = False):
+        if mode == 'market':
+            return _call(market_snapshot, category, force=force)
         return _call(service.snapshot, category, mode)
 
     @router.post('/import/preview')

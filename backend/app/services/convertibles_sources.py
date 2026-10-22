@@ -49,6 +49,7 @@ class ConvertibleQuote:
     turnover_amount: float | None
     turnover_rate_pct: float | None
     quote_at: str
+    source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -104,7 +105,7 @@ def _new_client(api_key: str):
     from app import secrets_store
 
     endpoint = secrets_store.load().get("tickflow_base_url") or None
-    return TickFlow(api_key=api_key, base_url=endpoint, timeout=20.0, max_retries=0)
+    return TickFlow(api_key=api_key, base_url=endpoint, timeout=8.0, max_retries=0)
 
 
 def normalize_symbol(code: str, *, kind: Literal["bond", "stock"]) -> str:
@@ -277,13 +278,16 @@ class ConvertibleQuoteService:
         configured = self.provider.configured()
         refreshes = [
             item.fetched_at for item in snapshot.items
-            if item.fetched_at and item.quote_source == self.provider.name
+            if item.fetched_at and (item.quote_source == self.provider.name
+                                    or self.provider.name == 'tickflow_fuyao_eastmoney')
         ]
         return ConvertibleSourceStatus(
             provider=self.provider.name,
             configured=configured,
             mode="realtime" if configured else "unconfigured",
             message=(
+                "优先 TickFlow，再尝试扶摇支持的正股行情，最后使用东方财富公开补充源。空清单可获取市场列表；已有清单仅更新报价。条款与公告须独立核验。"
+                if self.provider.name == 'tickflow_fuyao_eastmoney' else
                 "已配置行情 Key；连接和标的权限将在刷新时验证。条款与公告仍需独立提供。"
                 if configured else f"尚未配置实时行情数据源。{KEY_SETUP_HINT}"
             ),
@@ -298,7 +302,10 @@ class ConvertibleQuoteService:
         if current.revision != expected_revision:
             raise ConvertibleConflictError("清单已被另一操作更新，请刷新清单后再请求行情")
         if not current.items:
-            raise ConvertibleDataError(422, "请先导入研究清单，再刷新其中转债及正股的行情")
+            discover = getattr(self.provider, "discover", None)
+            if discover is None:
+                raise ConvertibleDataError(422, "请先导入研究清单，再刷新其中转债及正股的行情")
+            return discover(store, expected_revision)
         mapped = {
             item.code: (
                 normalize_symbol(item.code, kind="bond"),
@@ -342,13 +349,16 @@ class ConvertibleQuoteService:
                 "stock_change_pct": stock.change_pct if stock else None,
                 "stock_quote_at": stock.quote_at if stock else None,
                 "fetched_at": batch.fetched_at,
-                "quote_source": self.provider.name,
+                "quote_source": (f"{bond.source} / 正股:{stock.source}" if bond and stock and bond.source != stock.source
+                                 else bond.source if bond and bond.source else self.provider.name),
             }
-        label = "TickFlow" if self.provider.name == "tickflow" else self.provider.name
+        label = ("TickFlow" if self.provider.name == "tickflow" else
+                 '、'.join(sorted({quote.source for quote in batch.quotes.values() if quote.source}))
+                 or self.provider.name)
         try:
             return store.merge_quotes(
                 updates, expected_revision=expected_revision, as_of=max(quote_dates),
-                source=f"用户导入 + {label} 行情",
+                source=f"{current.source.partition(' + ')[0]} + {label} 行情",
             )
         except ConvertibleConflictError:
             raise

@@ -63,15 +63,28 @@ it('保存前开始的迟到读取不会覆盖已导入的新快照', async () =
 })
 
 
-it('没有行情Key时明确禁用行情更新，保留CSV研究功能', async () => {
+it('没有行情Key时仍可尝试补充源，保留CSV研究功能', async () => {
   mocks.load.mockResolvedValue(snapshot('base', '仍可研究的转债'))
   await act(async () => root.render(<QueryClientProvider client={client}><ConvertiblesPage /></QueryClientProvider>))
   await settle()
   const update = [...host.querySelectorAll('button')].find(button => button.textContent === '更新行情')!
-  expect(update.disabled).toBe(true)
+  expect(update.disabled).toBe(false)
   expect(host.textContent).toContain('行情 Key 未配置')
   expect(host.textContent).toContain('仍可研究的转债')
   expect(mocks.refresh).not.toHaveBeenCalled()
+})
+
+it('空清单自动获取一次市场列表，失败可手动重试且不会反复请求', async () => {
+  mocks.load.mockResolvedValue({ revision: '0', as_of: null, updated_at: null, source: '用户导入', items: [] })
+  mocks.refresh.mockRejectedValueOnce(new Error('补充源超时'))
+  await act(async () => root.render(<QueryClientProvider client={client}><ConvertiblesPage /></QueryClientProvider>))
+  await settle()
+  expect(mocks.refresh).toHaveBeenCalledTimes(1)
+  expect(host.textContent).toContain('补充源超时')
+  mocks.refresh.mockResolvedValueOnce(snapshot('market-1', '网络获取的测试转债'))
+  await click('获取市场清单')
+  expect(mocks.refresh).toHaveBeenCalledTimes(2)
+  expect(host.textContent).toContain('网络获取的测试转债')
 })
 
 it('行情更新失败保留已保存清单，并显示明确错误原因', async () => {

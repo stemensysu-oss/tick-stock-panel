@@ -30,7 +30,7 @@ export const QK = {
   convertibleSourceStatus: ['convertible-research', 'source-status'] as const,
   multiAssetCatalog: ['multi-asset', 'catalog'] as const,
   multiAssetSnapshots: ['multi-asset', 'snapshot'] as const,
-  multiAssetSnapshot: (category: string, mode: 'imported' | 'demo') => ['multi-asset', 'snapshot', category, mode] as const,
+  multiAssetSnapshot: (category: string, mode: 'imported' | 'demo' | 'market') => ['multi-asset', 'snapshot', category, mode] as const,
 
   // Watchlist
   watchlist:            ['watchlist'] as const,
