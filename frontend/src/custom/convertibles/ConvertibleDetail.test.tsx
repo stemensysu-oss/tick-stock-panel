@@ -7,10 +7,10 @@ import { ApiError, type ConvertibleItem, type ConvertibleResearch } from '@/lib/
 import { ConvertibleDetail } from './ConvertibleDetail'
 import { buildResearch, createResearchDraft } from './researchForm'
 
-const mocks = vi.hoisted(() => ({ analyze: vi.fn(), save: vi.fn(), saved: vi.fn() }))
+const mocks = vi.hoisted(() => ({ analyze: vi.fn(), save: vi.fn(), saved: vi.fn(), disclosures: vi.fn() }))
 vi.mock('@/lib/api', () => ({
   ApiError: class extends Error { constructor(message: string, readonly status: number) { super(message) } },
-  api: { analyzeConvertible: mocks.analyze, saveConvertibleResearch: mocks.save },
+  api: { analyzeConvertible: mocks.analyze, saveConvertibleResearch: mocks.save, convertibleDisclosures: mocks.disclosures },
 }))
 let host: HTMLDivElement
 let root: Root
@@ -77,4 +77,19 @@ it('试算版本冲突清除旧试算结果并禁止保存，防止误用另一�
   expect(host.textContent).not.toContain('本次试算结果')
   expect(host.textContent).toContain('研究清单已更新')
   expect([...host.querySelectorAll('button')].find(button => button.textContent === '保存研究资料')!.disabled).toBe(true)
+})
+
+it('联网条款入口可达、读取所选代码且保留人工编辑', async () => {
+  mocks.disclosures.mockResolvedValue({ code: item.code, lifecycle: 'listed', call_state: 'unknown',
+    fetched_at: '2026-10-22T10:00:00+08:00', call_clause_text: '合成条款原文', events: [], warnings: [], attempts: [] })
+  await render()
+  await click('现金流与估值')
+  await fill('纯债折现率（%）', '3')
+  await click('联网条款与强赎')
+  expect(mocks.disclosures).toHaveBeenCalledWith(item.code)
+  expect(host.textContent).toContain('合成条款原文')
+  expect(host.textContent).toContain('未确认实施状态')
+  expect(mocks.save).not.toHaveBeenCalled()
+  await click('现金流与估值')
+  expect((host.querySelector('[aria-label="纯债折现率（%）"]') as HTMLInputElement).value).toBe('3')
 })
