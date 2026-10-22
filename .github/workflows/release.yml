@@ -1,6 +1,6 @@
 name: 桌面客户端发布
 
-# 触发方式: 手动 (workflow_dispatch)。
+# 触发方式: 手动 (workflow_dispatch)，或个人分支提交显式云端验证请求。
 # 在 GitHub Actions 页面点 "Run workflow", 选择要构建的平台 + 版本号,
 # 个人 fork 只生成经过验证的 Actions artifact，不创建 Release 或 tag。
 # 仅原作者仓库保留显式分离的发布 job；构建 job 没有 contents 写权限。
@@ -14,6 +14,9 @@ name: 桌面客户端发布
 #   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.19 -f platforms=windows
 #   或 GitHub 网页 Actions → 桌面客户端发布 → Run workflow
 on:
+  push:
+    branches: [feature/funds-convertibles]
+    paths: [packaging/cloud-validation-request.json]
   workflow_dispatch:
     inputs:
       version:
@@ -35,6 +38,7 @@ permissions:
 jobs:
   # 第一步: 过滤出本次要构建的平台
   prepare:
+    if: github.event_name != 'push' || github.repository == 'stemensysu-oss/tick-stock-panel'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.filter.outputs.matrix }}
@@ -48,14 +52,20 @@ jobs:
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
           REQUESTED_PLATFORMS: ${{ inputs.platforms }}
+          REQUEST_EVENT: ${{ github.event_name }}
         run: |
           python3 - <<'PY'
           import json, os, re
           from pathlib import Path
           ver = json.loads(Path('frontend/package.json').read_text())['version']
-          if not re.fullmatch(r'\d+\.\d+\.\d+', ver) or os.environ['REQUESTED_VERSION'] != 'v' + ver:
+          version = os.environ['REQUESTED_VERSION']
+          platforms = os.environ['REQUESTED_PLATFORMS']
+          if os.environ['REQUEST_EVENT'] == 'push':
+              request = json.loads(Path('packaging/cloud-validation-request.json').read_text())
+              version, platforms = request['version'], request['platforms']
+          if not re.fullmatch(r'\d+\.\d+\.\d+', ver) or version != 'v' + ver:
               raise SystemExit('版本不一致：version 输入必须为 v + frontend/package.json version')
-          requested = [p.strip() for p in os.environ['REQUESTED_PLATFORMS'].split(',') if p.strip()]
+          requested = [p.strip() for p in platforms.split(',') if p.strip()]
           if not requested or set(requested) - {'windows', 'macos', 'linux'}:
               raise SystemExit('platforms 必须为 windows,macos,linux 的非空子集')
           all_platforms = [
