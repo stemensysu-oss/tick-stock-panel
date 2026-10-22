@@ -98,7 +98,7 @@ class PublicHTTP:
                        'fundf10.eastmoney.com', 'datacenter-web.eastmoney.com',
                        'vip.stock.finance.sina.com.cn', 'qt.gtimg.cn',
                        'www.aastocks.com', 'query.sse.com.cn',
-                       'smartbox.gtimg.cn', 'suggest3.sinajs.cn'})
+                       'smartbox.gtimg.cn', 'suggest3.sinajs.cn', 'web.ifzq.gtimg.cn'})
 
     def get(self, url, params=None):
         for attempt in range(2):

@@ -29,6 +29,7 @@ export function StockFinancialSearch({ onSelect, assetTypes }: Props) {
     queryFn: () => api.instrumentSearch(query, 20, assetTypes),
     enabled: query.trim().length > 0,
     staleTime: 30_000,
+    retry: false,
   })
 
   const results = search.data?.results ?? []
@@ -76,7 +77,8 @@ export function StockFinancialSearch({ onSelect, assetTypes }: Props) {
         <input
           ref={inputRef}
           type="text"
-          placeholder="输入股票代码或名称，如 600000 / 浦发"
+          placeholder={assetTypes?.includes('hk') ? "代码或名称，如 00700 / 腾讯" : "输入股票代码或名称，如 600000 / 浦发"}
+          aria-label="搜索股票代码或名称"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); setActiveIdx(-1) }}
           onFocus={() => { if (trimmed) setOpen(true) }}
@@ -103,6 +105,8 @@ export function StockFinancialSearch({ onSelect, assetTypes }: Props) {
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 搜索中…
               </div>
+            ) : search.isError ? (
+              <div role="alert" className="px-4 py-4 text-xs text-warning">搜索失败：{search.error.message}<button type="button" onClick={() => void search.refetch()}>重试搜索</button></div>
             ) : results.length === 0 ? (
               <div className="px-4 py-6 text-center text-xs text-muted">
                 未找到匹配的股票
@@ -125,6 +129,7 @@ export function StockFinancialSearch({ onSelect, assetTypes }: Props) {
                       <span className={`shrink-0 px-1 py-0.5 rounded text-[10px] leading-none border ${b.color}`}>{b.label}</span>
                     )
                   })()}
+                  {r.asset_type === 'hk' && <span className="text-xs text-amber-500">港股</span>}
                   {r.asset_type === 'index' && (
                     <span className="shrink-0 px-1 py-0.5 rounded text-[10px] leading-none bg-sky-500/10 text-sky-400">指数</span>
                   )}
@@ -132,6 +137,7 @@ export function StockFinancialSearch({ onSelect, assetTypes }: Props) {
                 </button>
               ))
             )}
+            {search.data?.warnings?.map((warning, i) => <p key={i} className="border-t border-border px-4 py-2 text-xs text-warning">{warning}</p>)}
           </motion.div>
         )}
       </AnimatePresence>

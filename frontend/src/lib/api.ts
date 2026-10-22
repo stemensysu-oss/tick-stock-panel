@@ -4052,6 +4052,12 @@ export const api = {
   },
 
   // ===== 个股分析 =====
+  stockAnalysisHk: (symbol: string, force = false) => request<{
+    symbol: string; name: string; currency: string; rows: KlineRow[]; as_of: string;
+    price_basis: string; volume_unit: string; source_name: string; fetched_at: string;
+    close: number; levels: Record<string, any[]>; dates: string[]; series: LevelSeries;
+    quote: WatchlistHkQuote; warnings: string[]; attempts: Record<string, unknown>[];
+  }>(`/api/stock-analysis/hk-data?symbol=${encodeURIComponent(symbol)}&force=${force}`, { quiet: true, timeoutMs: 90_000 }),
   stockAnalysisLevels: (symbol: string, days = 120) =>
     request<StockLevels>(`/api/stock-analysis/levels?symbol=${encodeURIComponent(symbol)}&days=${days}`),
 

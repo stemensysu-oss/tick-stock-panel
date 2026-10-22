@@ -12,10 +12,8 @@
 from __future__ import annotations
 
 import logging
-import math
 from datetime import timedelta
 
-import polars as pl
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -24,6 +22,7 @@ from app.indicators.levels import compute_levels, summarize_levels
 from app.market_time import cn_today
 from app.services import stock_reports
 from app.services.ndjson_heartbeat import with_heartbeat
+from app.services.stock_analysis_series import _build_series
 from app.services.stock_analyzer import analyze_stock_stream
 
 logger = logging.getLogger(__name__)
@@ -31,77 +30,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/stock-analysis", tags=["stock-analysis"])
 
 
-def _to_float_list(series: pl.Series) -> list:
-    """polars Series → JSON 安全的 float 列表(null/NaN → None)。"""
-    out: list = []
-    for v in series.to_list():
-        if v is None:
-            out.append(None)
-            continue
-        try:
-            f = float(v)
-            out.append(round(f, 2) if math.isfinite(f) else None)
-        except (TypeError, ValueError):
-            out.append(None)
-    return out
-
-
-def _build_series(df: pl.DataFrame) -> dict:
-    """提取带状指标(布林带 / Keltner通道 / ATR止损)的每日时间序列。
-
-    这些指标的本质是"每日一条线",随 MA/ATR/σ 漂移,画成曲线才能体现通道形态。
-    其余固定价位(枢轴/前高前低等)不在此,仍用水平 markLine。
-
-    返回结构(每个 value 都是按日期对齐的数组):
-      {
-        "boll":      {"upper": [...], "lower": [...]},
-        "keltner_s": {"upper": [...], "lower": [...]},   # 短期 MA20±2ATR
-        "keltner_m": {"upper": [...], "lower": [...]},   # 中期 MA60±2.5ATR
-        "keltner_l": {"upper": [...], "lower": [...]},   # 长期 MA120±3ATR
-        "atr":       {"stop_loss": [...], "take_profit": [...]},  # close∓2ATR
-      }
-    """
-    if df.is_empty() or "close" not in df.columns:
-        return {}
-
-    out: dict[str, dict] = {}
-    close = df["close"]
-    has_atr = "atr_14" in df.columns
-
-    # 布林带(上/下/中轨;中轨 = MA20,数据层已预计算)
-    if "boll_upper" in df.columns and "boll_lower" in df.columns:
-        out["boll"] = {
-            "upper": _to_float_list(df["boll_upper"]),
-            "lower": _to_float_list(df["boll_lower"]),
-            "mid": _to_float_list(df["ma20"]) if "ma20" in df.columns else None,
-        }
-
-    # Keltner 通道三档(需要 ATR)
-    if has_atr:
-        atr = df["atr_14"]
-        # MA120 现场算(不在预计算列中)
-        ma120 = df.select(pl.col("close").rolling_mean(120))["close"] if df.height >= 120 else None
-
-        def _channel(ma: pl.Series, n: float) -> dict:
-            return {
-                "upper": _to_float_list(ma + n * atr),
-                "lower": _to_float_list(ma - n * atr),
-            }
-
-        if "ma20" in df.columns:
-            out["keltner_s"] = _channel(df["ma20"], 2.0)
-        if "ma60" in df.columns:
-            out["keltner_m"] = _channel(df["ma60"], 2.5)
-        if ma120 is not None:
-            out["keltner_l"] = _channel(ma120, 3.0)
-
-        # ATR 止损/止盈: close ± 2×ATR(跟随行情漂移的动态止损线)
-        out["atr"] = {
-            "stop_loss": _to_float_list(close - 2 * atr),
-            "take_profit": _to_float_list(close + 2 * atr),
-        }
-
-    return out
+@router.get('/hk-data')
+def hk_data(symbol: str, force: bool = False):
+    from app.services.hk_stock_analysis import snapshot
+    try:
+        return snapshot(symbol, force=force)
+    except ValueError as exc:
+        from app.data_providers.research_market import ResearchSourceError
+        raise HTTPException(502 if isinstance(exc, ResearchSourceError) else 422, str(exc)) from None
 
 
 @router.get("/levels")
@@ -120,6 +56,9 @@ def get_levels(
     if not symbol:
         raise HTTPException(400, "symbol 不能为空")
 
+    from app.services.watchlist_hk import is_hk
+    if is_hk(symbol):
+        return hk_data(symbol)
     repo = request.app.state.repo
     end = cn_today()
     start = end - timedelta(days=days * 2)
@@ -163,6 +102,14 @@ async def analyze_stock(request: Request, req: AnalyzeRequest):
     if not req.symbol:
         raise HTTPException(400, "symbol 不能为空")
 
+    from app.services.watchlist_hk import is_hk
+    if is_hk(req.symbol):
+        from app.services.hk_stock_analysis import analyze_stream
+        async def hk_stream():
+            async for chunk in with_heartbeat(analyze_stream(req.symbol, req.focus)):
+                yield chunk + '\n'
+        return StreamingResponse(hk_stream(), media_type='application/x-ndjson',
+            headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
     repo = request.app.state.repo
     data_dir = repo.store.data_dir
 

@@ -177,9 +177,47 @@ def check_hk_watchlist(base: str) -> dict:
     return {'searches': searches, 'quote': row, 'group_id': group['id']}
 
 
+def check_hk_analysis(base: str) -> dict:
+    from urllib.parse import urlencode
+    from urllib.request import Request, urlopen
+    query = json_request(base, '/api/kline/instruments/search?' + urlencode({
+        'q': '00700', 'asset_types': 'stock,index,hk'}), timeout=120)
+    require([r['symbol'] for r in query['results']] == ['00700.HK'], 'Analysis search substituted mainland code')
+    data = json_request(base, '/api/stock-analysis/hk-data?symbol=00700.HK&force=true', timeout=120)
+    require(data['currency'] == 'HKD' and data['price_basis'] == 'unadjusted', 'HK price basis/currency wrong')
+    require(len(data['rows']) == 250 and data['as_of'] == data['rows'][-1]['date'], 'HK history incomplete')
+    require(data['levels']['pivot'] and data['levels']['extreme'] and data['levels']['sr'] == [], 'HK levels invalid')
+    require(all(r.get('ma20') is not None for r in data['rows'][-20:]), 'HK indicators missing')
+    require([a['provider'] for a in data['attempts']] == ['tickflow', 'fuyao', 'tencent_public'], 'HK daily order wrong')
+    # This runner has no personal AI credential. A clear error is required;
+    # successful model streaming is separately covered by the labelled contract test double.
+    request = Request(base + '/api/stock-analysis/analyze', data=json.dumps({'symbol':'00700.HK'}).encode(),
+                      headers={'Content-Type':'application/json'})
+    with urlopen(request, timeout=90) as response:
+        events = [json.loads(line) for line in response.read().decode().splitlines() if line]
+    require(any(e['type'] == 'meta' and 'HKD' in e['summary'] for e in events), 'HK AI context missing')
+    require(any(e['type'] == 'error' for e in events) and not any(e['type'] == 'done' for e in events),
+            'Unconfigured AI was incorrectly represented as a successful report')
+    focus = 'CLOUD-TEST-NOT-AI'
+    reports = json_request(base, '/api/stock-analysis/reports')['reports']
+    saved = next((r for r in reports if r.get('focus') == focus and r['symbol'] == '00700.HK'), None)
+    if saved is None:
+        saved = json_request(base, '/api/stock-analysis/reports', body={'symbol':'00700.HK',
+            'name':'腾讯控股', 'focus':focus, 'content':'云端报告持久化测试，非AI生成。',
+            'summary':f"HKD unadjusted {data['as_of']}", 'close':data['close'], 'levels':data['levels']})['report']
+    require(any(r['id'] == saved['id'] for r in json_request(base, '/api/stock-analysis/reports')['reports']),
+            'HK report persistence failed')
+    print(f"Installed HK analysis 00700.HK: {len(data['rows'])} daily bars, {data['as_of']}, AI missing-key path verified", flush=True)
+    return {'symbol':data['symbol'], 'rows':len(data['rows']), 'as_of':data['as_of'],
+        'source':data['source'], 'attempts':data['attempts'], 'levels':{k:len(v) for k,v in data['levels'].items()},
+        'ai_live_model_verified':False, 'ai_missing_config_verified':True,
+        'ai_streaming_contract':'separate cloud test uses labelled test model', 'report_id':saved['id']}
+
+
 def check_live_api(base: str) -> dict:
     """No credentials. Exercise real public fallback in the INSTALLED application."""
     hk_watchlist = check_hk_watchlist(base)
+    hk_analysis = check_hk_analysis(base)
     before = json_request(base, '/api/ext/convertibles')
     bonds = json_request(base, '/api/ext/convertibles/refresh',
                          body={'expected_revision': before['revision']}, timeout=180)
@@ -189,7 +227,7 @@ def check_live_api(base: str) -> dict:
                 for item in bonds['items']), 'Missing real convertible provenance/time')
     computed = sum(item.get('double_low') is not None for item in bonds['items'])
     require(computed > 100, 'Convertible stock bindings/prices or reference conversion prices are missing')
-    result = {'hk_watchlist': hk_watchlist, 'convertibles': {'rows': len(bonds['items']), 'as_of': bonds['as_of'],
+    result = {'hk_watchlist': hk_watchlist, 'hk_analysis': hk_analysis, 'convertibles': {'rows': len(bonds['items']), 'as_of': bonds['as_of'],
                               'with_double_low': computed}, 'markets': {}}
     print(f'Installed live convertibles: {len(bonds["items"])} rows, {computed} with double-low', flush=True)
     for category in ('etf', 'lof', 'cash', 'reits', 'indices', 'bonds', 'hk'):
