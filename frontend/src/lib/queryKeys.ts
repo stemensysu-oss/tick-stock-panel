@@ -35,6 +35,7 @@ export const QK = {
   // Watchlist
   watchlist:            ['watchlist'] as const,
   watchlistGroups:      ['watchlist-groups'] as const,
+  watchlistHkQuotes:    (symbols: string) => ['hk-watchlist-quotes', symbols] as const,
   watchlistQuotes:      ['watchlist-quotes'] as const,
   watchlistEnriched:    (ext?: string) => ['watchlist-enriched', ext] as const,
   // 异动边缘总览 (开启监控时才查询, 参数为 min_closeness/limit)

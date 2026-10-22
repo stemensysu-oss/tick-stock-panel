@@ -145,7 +145,7 @@ def search_instruments(
     request: Request,
     q: str = Query("", min_length=0, max_length=50, description="搜索关键词"),
     limit: int = Query(20, ge=1, le=50),
-    asset_types: str = Query("stock", description="逗号分隔的资产类型: stock,etf"),
+    asset_types: str = Query("stock", description="逗号分隔的资产类型: stock,etf,index,hk"),
 ):
     """模糊搜索标的 (代码 / 名称)。从内存 instruments 缓存中查。
 
@@ -159,8 +159,22 @@ def search_instruments(
     import polars as pl
 
     types = [t.strip() for t in asset_types.split(",") if t.strip()]
+    hk_data = None
+    if 'hk' in types:
+        from app.data_providers.research_hk_search import search_hk
+        try:
+            hk_data = search_hk(q.strip(), limit)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        import re
+        if re.fullmatch(r'(?:\d{5}(?:\.HK)?|HK\d{5})', q.strip().upper()):
+            # Five digits cannot be a mainland stock code. Failure to find HK
+            # must not silently suggest 600700.SH as an alternative to 00700.HK.
+            return hk_data
     parts: list[pl.DataFrame] = []
     for t in types:
+        if t == 'hk':
+            continue  # HK directory is independent of the mainland repository.
         df_t = repo.get_instruments_asset(t)
         if df_t.is_empty() or "symbol" not in df_t.columns:
             continue
@@ -172,7 +186,7 @@ def search_instruments(
             pl.lit(t).alias("asset_type"),
         ]).select(["symbol", "name", "code", "asset_type"]))
     if not parts:
-        return {"results": []}
+        return hk_data or {"results": []}
     df = pl.concat(parts, how="vertical")
 
     keyword = q.strip().upper()
@@ -222,6 +236,15 @@ def search_instruments(
             else (collected[0] if collected else df.head(0))
         )
     rows = matched.select(["symbol", "name", "code", "asset_type"]).to_dicts()
+    if hk_data:
+        merged = rows + hk_data['results']
+        seen = set()
+        unique = []
+        for row in merged:
+            if row['symbol'] not in seen:
+                seen.add(row['symbol'])
+                unique.append(row)
+        return {**hk_data, 'results': unique[:limit]}
     return {"results": rows}
 
 
@@ -231,7 +254,10 @@ def instruments_names(request: Request, symbols: list[str]):
     if not symbols:
         return {"names": {}}
     repo = request.app.state.repo
-    return {"names": repo.get_name_map(symbols)}
+    from app.data_providers.research_hk_search import known_name
+    names = repo.get_name_map(symbols)
+    names.update({symbol: name for symbol in symbols if (name := known_name(symbol))})
+    return {"names": names}
 
 
 def _get_stock_info(repo, symbol: str) -> dict:

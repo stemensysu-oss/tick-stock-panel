@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { WatchlistGroup } from '@/lib/api'
+import { isHongKongSymbol } from '@/lib/hongKong'
 import { fmtPrice, fmtPct, priceColorClass } from '@/lib/format'
 import {
   rowPct,
@@ -120,7 +121,7 @@ const GroupCard = React.memo(function GroupCard({
             const pct = rowPct(r)
             const price = r.rt_price ?? r.close
             const cls = priceColorClass(pct)
-            const board = boardTag(r.symbol)
+            const board = isHongKongSymbol(r.symbol) ? null : boardTag(r.symbol)
             return (
               <button
                 key={r.symbol}
@@ -137,6 +138,7 @@ const GroupCard = React.memo(function GroupCard({
                 <span className="shrink-0 font-mono text-xs text-foreground">{r.symbol}</span>
                 <span className="flex min-w-0 flex-1 items-center gap-1">
                   <span className="min-w-0 truncate text-xs text-secondary">{r.rt_name ?? r.name}</span>
+                  {isHongKongSymbol(r.symbol) && <span className="shrink-0 text-[10px] text-amber-500">港股 · {r.currency === 'HKD' ? 'HKD' : '币种待确认'}</span>}
                   {board && (
                     <span className={`shrink-0 inline-flex items-center justify-center px-1 h-[16px] rounded text-[9px] font-bold leading-none ${board.color}`}>
                       {board.label}

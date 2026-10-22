@@ -141,8 +141,45 @@ def check_api(base: str, version: str) -> None:
     require(funds.get("provider") == "fuyao_then_eastmoney" and funds.get("configured") is True, "Fund fallback path is unavailable")
 
 
+def check_hk_watchlist(base: str) -> dict:
+    """Exercise the exact main-watchlist entry reported by the user."""
+    from urllib.parse import urlencode
+    searches = {}
+    for keyword in ('00700', '腾讯', '腾讯科技', '香港兴业'):
+        data = json_request(base, '/api/kline/instruments/search?' + urlencode({
+            'q': keyword, 'asset_types': 'stock,etf,index,hk', 'limit': 20}), timeout=120)
+        expected = '00480.HK' if keyword == '香港兴业' else '00700.HK'
+        require(any(row['symbol'] == expected and row['asset_type'] == 'hk'
+                    for row in data['results']), f'Main watchlist HK search failed: {keyword}')
+        if keyword == '00700':
+            require(all(row['symbol'] == '00700.HK' for row in data['results']),
+                    '00700 silently substituted mainland substring matches')
+        searches[keyword] = data
+    groups = json_request(base, '/api/watchlist/groups')['groups']
+    group = next((row for row in groups if row['name'] == '港股云端验证'), None)
+    if group is None:
+        group = json_request(base, '/api/watchlist/groups', body={'name': '港股云端验证'})['group']
+    listed = json_request(base, '/api/watchlist',
+                          body={'symbol': '00700.HK', 'group_id': group['id']})['symbols']
+    require(any(row['symbol'] == '00700.HK' and group['id'] in row['group_ids'] for row in listed),
+            'HK add to current watchlist group did not persist')
+    data = json_request(base, '/api/watchlist/hk-quotes?force=true', timeout=120)
+    row = next((row for row in data['rows'] if row['symbol'] == '00700.HK'), {})
+    require(row.get('currency') == 'HKD' and (row.get('close') or 0) > 0
+            and row.get('quote_at') and row.get('quote_source'), 'HK main watchlist quote is missing')
+    enriched = json_request(base, '/api/watchlist/enriched')['rows']
+    actual = next((item for item in enriched if item['symbol'] == '00700.HK'), {})
+    require(actual.get('asset_type') == 'hk' and actual.get('close') == row['close'],
+            'HK quote was lost in main watchlist enriched response')
+    require(actual.get('rsi14') is None and actual.get('limit_up_price') is None,
+            'HK acquired unsupported mainland technical indicators')
+    print(f'Installed main watchlist 00700.HK: {row["close"]} HKD, {row["quote_at"]}', flush=True)
+    return {'searches': searches, 'quote': row, 'group_id': group['id']}
+
+
 def check_live_api(base: str) -> dict:
     """No credentials. Exercise real public fallback in the INSTALLED application."""
+    hk_watchlist = check_hk_watchlist(base)
     before = json_request(base, '/api/ext/convertibles')
     bonds = json_request(base, '/api/ext/convertibles/refresh',
                          body={'expected_revision': before['revision']}, timeout=180)
@@ -152,7 +189,7 @@ def check_live_api(base: str) -> dict:
                 for item in bonds['items']), 'Missing real convertible provenance/time')
     computed = sum(item.get('double_low') is not None for item in bonds['items'])
     require(computed > 100, 'Convertible stock bindings/prices or reference conversion prices are missing')
-    result = {'convertibles': {'rows': len(bonds['items']), 'as_of': bonds['as_of'],
+    result = {'hk_watchlist': hk_watchlist, 'convertibles': {'rows': len(bonds['items']), 'as_of': bonds['as_of'],
                               'with_double_low': computed}, 'markets': {}}
     print(f'Installed live convertibles: {len(bonds["items"])} rows, {computed} with double-low', flush=True)
     for category in ('etf', 'lof', 'cash', 'reits', 'indices', 'bonds', 'hk'):

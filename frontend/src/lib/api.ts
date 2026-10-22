@@ -2524,6 +2524,27 @@ export interface ConvertiblePreview {
 }
 
 // 多资产研究：只读演示与用户导入快照隔离；不存在隐式实时行情回退。
+/** Research Hong Kong snapshot. Percentages follow watchlist's fractional contract. */
+export interface WatchlistHkQuote {
+  symbol: string
+  name: string
+  asset_type: 'hk'
+  currency: 'HKD' | null
+  close: number | null
+  change_pct: number | null
+  quote_at: string | null
+  quote_source: string | null
+  quote_warnings: string[]
+  quote_status: string
+}
+export interface WatchlistHkQuotes {
+  rows: WatchlistHkQuote[]
+  attempts: { provider: string; status: string }[]
+  warnings: string[]
+  fetched_at: string | null
+  status: string
+}
+
 export type MultiAssetMode = 'imported' | 'demo' | 'market'
 export interface MultiAssetColumn {
   key: string
@@ -3079,7 +3100,7 @@ export const api = {
       body: JSON.stringify({ symbols, date, ...(preferLocal ? { prefer_local: true } : {}), ...(since ? { since } : {}) }),
     }),
   instrumentSearch: (q: string, limit = 20, assetTypes?: string) =>
-    request<{ results: { symbol: string; name: string; code: string; asset_type?: string }[] }>(
+    request<{ results: { symbol: string; name: string; code: string; asset_type?: string; currency?: string }[]; warnings?: string[]; resolved_query?: string }>(
       `/api/kline/instruments/search?q=${encodeURIComponent(q)}&limit=${limit}${assetTypes ? `&asset_types=${encodeURIComponent(assetTypes)}` : ''}`,
     ),
 
@@ -3276,6 +3297,7 @@ export const api = {
     ),
   watchlistClear: () =>
     request<{ removed: number }>('/api/watchlist', { method: 'DELETE' }),
+  watchlistHkQuotes: (force = false) => request<WatchlistHkQuotes>(`/api/watchlist/hk-quotes?force=${force}`, { quiet: true, timeoutMs: 90_000 }),
   watchlistQuotes: () => request<{ quotes: Quote[] }>('/api/watchlist/quotes'),
   watchlistEnriched: (extColumns?: string) =>
     request<{

@@ -97,7 +97,8 @@ class PublicHTTP:
     hosts = frozenset({'push2.eastmoney.com', 'api.fund.eastmoney.com',
                        'fundf10.eastmoney.com', 'datacenter-web.eastmoney.com',
                        'vip.stock.finance.sina.com.cn', 'qt.gtimg.cn',
-                       'www.aastocks.com', 'query.sse.com.cn'})
+                       'www.aastocks.com', 'query.sse.com.cn',
+                       'smartbox.gtimg.cn', 'suggest3.sinajs.cn'})
 
     def get(self, url, params=None):
         for attempt in range(2):
@@ -126,7 +127,8 @@ class PublicHTTP:
             target = url + ('?' + urlencode(params) if params else '')
             request = Request(target, headers={
                 'User-Agent': 'Mozilla/5.0', 'Accept-Encoding': 'identity',
-                'Referer': ('https://www.sse.com.cn/' if host == 'query.sse.com.cn' else
+                'Referer': ('https://finance.sina.com.cn/' if host == 'suggest3.sinajs.cn' else
+                            'https://www.sse.com.cn/' if host == 'query.sse.com.cn' else
                             'https://quote.eastmoney.com/' if host == 'push2.eastmoney.com' else
                             'https://fundf10.eastmoney.com/'),
             })

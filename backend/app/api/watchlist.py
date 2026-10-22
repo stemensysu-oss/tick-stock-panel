@@ -19,7 +19,7 @@ from app.price_limits import (
     polars_limit_price,
     polars_price_limit_pct,
 )
-from app.services import watchlist
+from app.services import watchlist, watchlist_hk
 from app.services.watchlist_csv import import_watchlist_codes, import_watchlist_csv
 from app.services.watchlist_ocr import import_watchlist_image
 from app.services.watchlist_ocr.provider import get_ocr_provider
@@ -105,7 +105,12 @@ def _with_names(rows: list[dict], request: Request) -> list[dict]:
         return rows
     try:
         # 股票 + ETF 名称统一由 repo.get_name_map 解析, 自选列表可混合持有
+        from app.data_providers.research_hk_search import known_name
         name_by_symbol = request.app.state.repo.get_name_map([r.get("symbol") for r in rows])
+        name_by_symbol.update({r['symbol']: name for r in rows if (name := known_name(r['symbol']))})
+        name_by_symbol.update({r['symbol']: r['name'] for r in
+                               watchlist_hk.cached_rows([r['symbol'] for r in rows if watchlist_hk.is_hk(r['symbol'])])
+                               if r.get('name')})
         if not name_by_symbol:
             return rows
         return [{**row, "name": name_by_symbol.get(row.get("symbol"))} for row in rows]
@@ -145,6 +150,15 @@ def add_batch(req: BatchAddRequest, request: Request):
 @router.get("/groups")
 def list_groups():
     return {"groups": watchlist.list_groups()}
+
+
+@router.get('/hk-quotes')
+def hk_quotes(force: bool = False):
+    from app.data_providers.research_market import ResearchSourceError
+    try:
+        return watchlist_hk.quote_snapshot([r['symbol'] for r in watchlist.list_symbols()], force=force)
+    except ResearchSourceError as exc:
+        raise HTTPException(502, str(exc)) from None
 
 
 @router.post("/groups")
@@ -482,9 +496,10 @@ def watchlist_enriched(
     # (避免无 ETF 用户在缓存冷启动时触发 ETF 全量懒加载)
     etf_set = repo.get_etf_symbol_set()
     index_set = repo.get_index_symbol_set()
-    etf_symbols = [s for s in symbols if s in etf_set]
-    index_symbols = [s for s in symbols if s not in etf_set and s in index_set]
-    stock_symbols = [s for s in symbols if s not in etf_set and s not in index_set]
+    hk_symbols = [s for s in symbols if watchlist_hk.is_hk(s)]
+    etf_symbols = [s for s in symbols if s in etf_set and s not in hk_symbols]
+    index_symbols = [s for s in symbols if s not in etf_set and s in index_set and s not in hk_symbols]
+    stock_symbols = [s for s in symbols if s not in etf_set and s not in index_set and s not in hk_symbols]
 
     df_e, cache_date = repo.get_enriched_latest()
 
@@ -524,6 +539,12 @@ def watchlist_enriched(
             df_idx = idx_watchlist_df
         df = df_idx if df.is_empty() else pl.concat([df, df_idx], how="diagonal_relaxed")
 
+    # HK is only a placeholder here. No network calls in this hot path, and no
+    # mainland indicators/price limits attached to a Hong Kong security.
+    if hk_symbols:
+        df_hk = pl.DataFrame({'symbol': hk_symbols})
+        df = df_hk if df.is_empty() else pl.concat([df, df_hk], how='diagonal_relaxed')
+
     # as_of 取三类缓存中较旧者
     dates = [d for d in (cache_date if stock_symbols else None, etf_date, index_date) if d is not None]
     as_of = min(dates) if dates else None
@@ -550,7 +571,8 @@ def watchlist_enriched(
     )
 
     # 标注资产类型: 前端据此渲染徽标/豁免板块筛选/分时列降级
-    asset_map = {**{s: "etf" for s in etf_symbols}, **{s: "index" for s in index_symbols}}
+    asset_map = {**{s: "etf" for s in etf_symbols}, **{s: "index" for s in index_symbols},
+                 **{s: 'hk' for s in hk_symbols}}
     df = df.with_columns(
         pl.col("symbol").replace_strict(asset_map, default="stock", return_dtype=pl.Utf8).alias("asset_type")
     )
@@ -693,6 +715,8 @@ def watchlist_enriched(
     df = df.sort("_sort_order").drop("_sort_order")
 
     rows = df.to_dicts()
+    hk_by_symbol = {row['symbol']: row for row in watchlist_hk.cached_rows(hk_symbols)}
+    rows = [{**row, **hk_by_symbol.get(row['symbol'], {})} for row in rows]
     elapsed = (time.perf_counter() - t0) * 1000
     return {"rows": rows, "as_of": str(as_of) if as_of else None,
             "elapsed_ms": elapsed, "dates": quote_dates}

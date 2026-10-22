@@ -16,6 +16,8 @@ import { computeGroupPcts, loadGroupStatsConfig, type GroupStatsConfigPatch } fr
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { StockPreviewDialog } from '@/components/StockPreviewDialog'
+import { HongKongQuoteDialog } from '@/components/HongKongQuoteDialog'
+import { isHongKongSymbol } from '@/lib/hongKong'
 import { toNavItems, type NavItem } from '@/lib/listNav'
 import {
   DimensionMembersDialog,
@@ -278,10 +280,11 @@ function StockSearchBox({
   const [activeIdx, setActiveIdx] = useState(-1)
 
   const search = useQuery({
-    queryKey: QK.instrumentSearch(query, 'stock,etf,index'),
-    queryFn: () => api.instrumentSearch(query, 20, 'stock,etf,index'),
+    queryKey: QK.instrumentSearch(query, 'stock,etf,index,hk'),
+    queryFn: () => api.instrumentSearch(query, 20, 'stock,etf,index,hk'),
     enabled: query.trim().length > 0,
     staleTime: 30_000,
+    retry: false,
   })
 
   const results = search.data?.results ?? []
@@ -327,7 +330,8 @@ function StockSearchBox({
         <input
           ref={inputRef}
           type="text"
-          placeholder="搜索…"
+          placeholder="搜索内地 / 港股…"
+          aria-label="搜索内地或港股代码及名称"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); setActiveIdx(-1) }}
           onFocus={() => { if (query.trim()) setOpen(true) }}
@@ -336,6 +340,11 @@ function StockSearchBox({
         />
       </div>
 
+      {open && query.trim() && results.length === 0 && <div className="absolute right-0 top-full z-50 mt-1 w-72 rounded-card border border-border bg-base p-3 text-xs text-muted" role={search.isError ? 'alert' : 'status'}>
+        {search.isFetching ? '正在搜索内地与港股…' : search.isError ? <><p>搜索未成功：{search.error.message}</p><button type="button" onClick={() => void search.refetch()} className="mt-2 text-accent">重试搜索</button></> : '未找到对应标的；港股可输入五位代码（如 00700）或公司名称。'}
+        {search.data?.warnings?.map((warning, index) => <p key={index} className="mt-2 text-warning">{warning}</p>)}
+        {!search.isError && !search.isFetching && !!search.data?.warnings?.length && <button type="button" onClick={() => void search.refetch()} className="mt-2 text-accent">重新搜索</button>}
+      </div>}
       <AnimatePresence>
         {open && results.length > 0 && (
           <motion.div
@@ -367,6 +376,7 @@ function StockSearchBox({
                       {r.asset_type === 'etf' && (
                         <span className="shrink-0 px-1 py-0.5 rounded text-[10px] leading-none bg-accent/10 text-accent">ETF</span>
                       )}
+                      {(r.asset_type === 'hk' || isHongKongSymbol(r.symbol)) && <span className="shrink-0 rounded bg-amber-500/10 px-1 py-0.5 text-[10px] text-amber-500">港股</span>}
                       {r.asset_type === 'index' && (
                         <span className="shrink-0 px-1 py-0.5 rounded text-[10px] leading-none bg-sky-500/10 text-sky-400">指数</span>
                       )}
@@ -429,6 +439,7 @@ function StockSearchBox({
                 </div>
               )
             })}
+            {search.data?.warnings?.map((warning, index) => <p key={index} className="border-t border-border px-3 py-2 text-[10px] leading-relaxed text-warning">{warning}</p>)}
           </motion.div>
         )}
       </AnimatePresence>
@@ -520,11 +531,12 @@ const StockCard = React.memo(function StockCard({
   onToggleMember: (symbol: string, groupId: string, member: boolean) => void
   groupChangePending: boolean
 }) {
-  const board = boardTag(r.symbol)
+  const hongKong = isHongKongSymbol(r.symbol)
+  const board = hongKong ? null : boardTag(r.symbol)
   const price = r.rt_price ?? r.close
   const pct = r.rt_pct ?? r.change_pct
   const name = r.rt_name ?? r.name
-  const signals = getSignals(r)
+  const signals = hongKong ? [] : getSignals(r)
   const isUp = (pct ?? 0) > 0
   const isDown = (pct ?? 0) < 0
 
@@ -596,7 +608,8 @@ const StockCard = React.memo(function StockCard({
               {board.label}
             </span>
           )}
-          {r.consecutive_limit_ups > 0 && (
+          {hongKong && <span className="shrink-0 text-[10px] text-amber-500">港股 · {r.currency === 'HKD' ? 'HKD' : '币种待确认'}</span>}
+          {!hongKong && r.consecutive_limit_ups > 0 && (
             <span className="shrink-0 inline-flex items-center justify-center px-1 h-[16px] rounded bg-danger/15 text-danger text-[9px] font-bold tabular-nums">
               {r.consecutive_limit_ups === 1 ? '首板' : `${r.consecutive_limit_ups}连`}
             </span>
@@ -617,7 +630,7 @@ const StockCard = React.memo(function StockCard({
         </div>
 
         {/* 第三行: 指标 */}
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px] text-muted leading-relaxed">
+        {hongKong ? <p className="pb-2 text-[10px] text-muted">{r.currency === 'HKD' ? '港元报价' : '币种待报价确认'} · 技术指标未接入</p> : <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px] text-muted leading-relaxed">
           <span title="换手率">换手<span className={`font-mono ml-0.5 ${turnoverColor(r.turnover_rate)}`}>{r.turnover_rate != null ? `${r.turnover_rate.toFixed(2)}%` : '—'}</span></span>
           <span title="量比">量比<span className="font-mono ml-0.5">{fmtPrice(r.vol_ratio_5d)}</span></span>
           <span title="RSI14">RSI<span className="font-mono ml-0.5">{r.rsi_14 != null ? r.rsi_14.toFixed(1) : '—'}</span></span>
@@ -649,7 +662,7 @@ const StockCard = React.memo(function StockCard({
               </span>
             )
           })}
-        </div>
+        </div>}
       </div>
 
       {/* 信号标签区 */}
@@ -669,7 +682,7 @@ const StockCard = React.memo(function StockCard({
       )}
 
       {/* 迷你蜡烛图 */}
-      {showCandle && candleRows.length > 0 && (
+      {!hongKong && showCandle && candleRows.length > 0 && (
         <div className="border-t border-border/40 px-3 py-1.5">
           <MiniCandlestick rows={candleRows} height={32} />
         </div>
@@ -851,11 +864,36 @@ export function Watchlist() {
   // symbol 派生只依赖 enriched.data: 旧写法 symbols 每次渲染都是新引用 (击穿 memo)
   // 且 filter×find 为 O(n²), 实时行情每 tick 重渲染时放大为每秒全量比较。
   // 指数无本地分钟K数据, 分时批量请求剔除指数 symbol (省请求, 避免逐只 404)
-  const enrichedRows = enriched.data?.rows
+  const hkSymbolsKey = useMemo(() => (list.data?.symbols ?? []).map(entry => entry.symbol).filter(isHongKongSymbol).sort().join(','), [list.data])
+  const hkQuotes = useQuery({
+    queryKey: QK.watchlistHkQuotes(hkSymbolsKey),
+    queryFn: () => api.watchlistHkQuotes(),
+    enabled: !!hkSymbolsKey, staleTime: 60_000, refetchInterval: 60_000, retry: false,
+  })
+  const refreshHk = useMutation({
+    mutationFn: () => api.watchlistHkQuotes(true),
+    onSuccess: data => qc.setQueryData(QK.watchlistHkQuotes(hkSymbolsKey), data),
+  })
+  const hkRefreshError = refreshHk.isError && refreshHk.submittedAt > hkQuotes.dataUpdatedAt
+    ? refreshHk.error : hkQuotes.error
+  const enrichedRows = useMemo(() => {
+    const base = enriched.data?.rows ?? []
+    const quotes = new Map((hkQuotes.data?.rows ?? []).map(row => [row.symbol, row]))
+    const result = base.map((row: any) => isHongKongSymbol(row.symbol)
+      ? { ...row, ...quotes.get(row.symbol), asset_type: 'hk' } : row)
+    const known = new Set(result.map((row: any) => row.symbol))
+    for (const entry of list.data?.symbols ?? []) {
+      if (isHongKongSymbol(entry.symbol) && !known.has(entry.symbol)) result.push({
+        ...entry, name: entry.symbol, close: null, change_pct: null,
+        currency: null, ...quotes.get(entry.symbol), asset_type: 'hk',
+      })
+    }
+    return result
+  }, [enriched.data, hkQuotes.data, list.data])
   const { symbols, symbolsKey, minuteSymbols, minuteSymbolsKey } = useMemo(() => {
     const rows = enrichedRows ?? []
-    const syms = rows.map((r: any) => r.symbol)
-    const nonIndex = rows.filter((r: any) => r.asset_type !== 'index').map((r: any) => r.symbol)
+    const syms = rows.filter((r: any) => !isHongKongSymbol(r.symbol)).map((r: any) => r.symbol)
+    const nonIndex = rows.filter((r: any) => r.asset_type !== 'index' && !isHongKongSymbol(r.symbol)).map((r: any) => r.symbol)
     return {
       symbols: syms,
       symbolsKey: syms.join(','),
@@ -883,7 +921,7 @@ export function Watchlist() {
   // 蜡烛用每 tick 刷新的 enriched 当日 OHLC 前端覆盖/追加, 蜡烛随实时行情跳动, 零额外请求。
   const klineData = useMemo(() => {
     const base = dailyKVisible ? (klineBatch.data?.data ?? {}) : {}
-    const liveRows = enriched.data?.rows
+    const liveRows = enrichedRows.filter((row: any) => !isHongKongSymbol(row.symbol))
     const asOf = enriched.data?.as_of
     if (!dailyKVisible || !liveRows?.length || !asOf) return base
     const liveBySymbol = new Map<string, any>(liveRows.map((r: any) => [r.symbol, r]))
@@ -904,7 +942,7 @@ export function Watchlist() {
       }
     }
     return patched
-  }, [dailyKVisible, klineBatch.data, enriched.data])
+  }, [dailyKVisible, klineBatch.data, enriched.data, enrichedRows])
 
   // 批量分时数据 (有分钟K批量能力时, 列可见才拉)
   // 刷新策略: 仅当实时行情运行 且 用户在实时监控设置里开启 minute_intraday_refresh 时
@@ -949,11 +987,11 @@ export function Watchlist() {
     if (!intradayVisible) return {}
     return extendMinuteTail(
       minuteBatch.data?.data ?? {},
-      enriched.data?.rows,
+      enrichedRows.filter((row: any) => !isHongKongSymbol(row.symbol)),
       enriched.data?.dates,
       new Date(),
     )
-  }, [intradayVisible, minuteBatch.data, enriched.data])
+  }, [intradayVisible, minuteBatch.data, enriched.data, enrichedRows])
 
   const addMutation = useMutation({
     mutationFn: ({ symbol, groupId }: { symbol: string; groupId: string | null }) =>
@@ -1077,7 +1115,7 @@ export function Watchlist() {
 
   const listEntries = list.data?.symbols ?? []
   const allSymbols = listEntries.map(s => s.symbol)
-  const rows = enriched.data?.rows ?? []
+  const rows = enrichedRows
   const groupBySymbol = useMemo(
     () => new Map(listEntries.map(entry => [entry.symbol, entry.group_ids ?? []])),
     [listEntries],
@@ -1086,7 +1124,7 @@ export function Watchlist() {
   const groupPcts = useMemo(
     () => computeGroupPcts(
       listEntries,
-      new Map(rows.map((r: any) => [r.symbol as string, r])),
+      new Map(rows.filter((r: any) => !isHongKongSymbol(r.symbol)).map((r: any) => [r.symbol as string, r])),
     ),
     [listEntries, rows],
   )
@@ -1125,7 +1163,7 @@ export function Watchlist() {
   const showRealtimeDot = realtimeRunning && realtimeMode === 'watchlist'
   // 真正被监控的标的集合 (自选列表前 watchlistMonitoredCount 个)
   const monitoredSymbols = useMemo(
-    () => showRealtimeDot ? new Set(allSymbols.slice(0, watchlistMonitoredCount)) : new Set<string>(),
+    () => showRealtimeDot ? new Set(allSymbols.filter(symbol => !isHongKongSymbol(symbol)).slice(0, watchlistMonitoredCount)) : new Set<string>(),
     [showRealtimeDot, allSymbols, watchlistMonitoredCount],
   )
 
@@ -1273,7 +1311,7 @@ export function Watchlist() {
     .map(c => `${(c.source as { configId: string }).configId}.${(c.source as { fieldName: string }).fieldName}`)
     .join(',')
   const extChartSymbolsKey = useMemo(
-    () => sortedRows.map(r => r.symbol as string).sort().join(','),
+    () => sortedRows.filter(r => !isHongKongSymbol(r.symbol)).map(r => r.symbol as string).sort().join(','),
     [sortedRows],
   )
   const extSeriesQuery = useQuery({
@@ -1295,13 +1333,13 @@ export function Watchlist() {
 
   // 分时列集合竞价叠加: 左侧窄栏价格/匹配量/未匹配量 (来自同一张时序扩展表)
   const auctionCfg = useAuctionConfig(columns)
-  const auctionSymbols = useMemo(() => sortedRows.map(r => r.symbol as string), [sortedRows])
+  const auctionSymbols = useMemo(() => sortedRows.filter(r => !isHongKongSymbol(r.symbol)).map(r => r.symbol as string), [sortedRows])
   const auctionData = useAuctionSeries(auctionCfg, auctionSymbols)
 
   // 切股导航列表: 按列表当前展示顺序 (与 sortedRows 一致, 排序/筛选后行序随之变化)。
   // 弹窗未打开时跳过构建 — sortedRows 随行情 tick 重建, 避免无谓分配。
   const previewNavItems = useMemo(
-    () => previewSymbol ? toNavItems(sortedRows) : [],
+    () => previewSymbol ? toNavItems(sortedRows.filter(r => !isHongKongSymbol(r.symbol))) : [],
     [previewSymbol, sortedRows],
   )
 
@@ -1367,7 +1405,7 @@ export function Watchlist() {
   // 指标全为 null 的行属于 enriched 缓存未覆盖 (新股/冷门/新用户未同步), 非筛选导致.
   // 用 close 是否为 null/undefined 判断 "整行指标缺失" (close 是 enriched 最基础字段).
   const pendingCount = useMemo(
-    () => sortedRows.filter((r: any) => r.close == null).length,
+    () => sortedRows.filter((r: any) => !isHongKongSymbol(r.symbol) && r.close == null).length,
     [sortedRows],
   )
 
@@ -1522,12 +1560,12 @@ export function Watchlist() {
               <Settings2 className="h-4 w-4" />
             </button>
             <button
-              onClick={() => enriched.refetch()}
-              disabled={enriched.isFetching}
+              onClick={() => { void enriched.refetch(); if (hkSymbolsKey) refreshHk.mutate() }}
+              disabled={enriched.isFetching || refreshHk.isPending || hkQuotes.isFetching}
               className="inline-flex items-center justify-center h-8 w-8 rounded-btn bg-elevated hover:bg-elevated/80 text-secondary hover:text-foreground transition-colors duration-150 ease-smooth disabled:opacity-50"
               title="刷新"
             >
-              <RefreshCw className={`h-4 w-4 ${enriched.isFetching ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${enriched.isFetching || refreshHk.isPending || hkQuotes.isFetching ? 'animate-spin' : ''}`} />
             </button>
             {allSymbols.length > 0 && (
               <>
@@ -1548,7 +1586,7 @@ export function Watchlist() {
                 symbols: sortedRows.map((row: any) => row.symbol),
                 viewMode,
                 selectedGroup,
-                refresh: () => enriched.refetch(),
+                refresh: async () => { await enriched.refetch(); if (hkSymbolsKey) await refreshHk.mutateAsync() },
               }}
             />
           </div>
@@ -1669,6 +1707,11 @@ export function Watchlist() {
           )}
         </div>
       )}
+
+      {!!hkSymbolsKey && <div className="mx-5 my-2 rounded-btn border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-muted" role="status">港股币种以有效报价确认为准，HKD 表示港元，公开报价可能延迟；单独每分钟更新，刷新按钮会重新取数。港股不参与内地技术指标、K 线和分组涨跌统计。
+        {hkRefreshError && <p className="mt-1 text-warning">港股刷新失败，保留上次有效报价：{hkRefreshError.message}</p>}
+        {hkQuotes.data?.warnings.map((warning, index) => <p key={index} className="mt-1 text-warning">{warning}</p>)}
+      </div>}
 
       {/* 可滚动列表区 — 占满剩余高度，内部独立滚动，表头 sticky 固定 */}
       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -1792,6 +1835,10 @@ export function Watchlist() {
                 return undefined
               }}
               renderCell={(r: any, col: ColumnConfig) => {
+                // Mainland indicator contracts do not apply to HK quote rows.
+                if (isHongKongSymbol(r.symbol) && (col.source.type === 'ext' || !['symbol', 'price', 'pct'].includes(col.source.key))) {
+                  return <td className="px-2 py-1.5 text-center text-xs text-muted" title="港股此数据能力尚未接入">{col.source.type === 'builtin' && ['candle', 'intraday'].includes(col.source.key) ? '港股未接入' : '—'}</td>
+                }
                 // ext 列
                 if (col.source.type === 'ext') {
                   return renderExtCell(r, col, expandedCells, handleToggleExpand, setDimensionTarget, extSeriesData)
@@ -1802,7 +1849,7 @@ export function Watchlist() {
                 const name = r.rt_name ?? r.name
                 // 自选页 symbol 列：预览 + 内嵌删除（减号图标，二次确认）
                 if (key === 'symbol') {
-                  const board = boardTag(r.symbol)
+                  const board = isHongKongSymbol(r.symbol) ? null : boardTag(r.symbol)
                   return (
                     <td className="px-1.5 py-1.5">
                       <div className="flex items-center gap-1 w-full">
@@ -1819,6 +1866,7 @@ export function Watchlist() {
                               {name}
                             </span>
                           )}
+                          {isHongKongSymbol(r.symbol) && <span className="shrink-0 text-[10px] text-amber-500">港股 · {r.currency === 'HKD' ? 'HKD' : '币种待确认'}</span>}
                           {board ? (
                             <span className={`shrink-0 inline-flex items-center justify-center w-[18px] h-[18px] rounded text-[9px] font-bold leading-none border ${board.color}`}>
                               {board.label}
@@ -1890,7 +1938,7 @@ export function Watchlist() {
                 // 实时行情列：price/pct/amount 使用 rt_ 回退（自选页有实时推送）
                 const numCls = 'px-2 py-1.5 text-right num tabular-nums'
                 if (key === 'price') {
-                  return <td className={`${numCls} ${priceColorClass(pct)}`}>{fmtPrice(price)}</td>
+                  return <td className={`${numCls} ${priceColorClass(pct)}`}>{fmtPrice(price)}{isHongKongSymbol(r.symbol) && <span className="ml-1 text-[10px] text-muted">{r.currency === 'HKD' ? 'HKD' : '币种待确认'}</span>}</td>
                 }
                 if (key === 'pct') {
                   return <td className={`${numCls} ${priceColorClass(pct)}`}>{fmtPct(pct)}</td>
@@ -2057,13 +2105,20 @@ export function Watchlist() {
         onClose={() => setCustomizerOpen(false)}
       />
 
-      <StockPreviewDialog
+      {previewSymbol && isHongKongSymbol(previewSymbol) ? <HongKongQuoteDialog
+        symbol={previewSymbol} name={previewName}
+        row={rows.find((row: any) => row.symbol === previewSymbol)} onClose={closePreview}
+        inWatchlist={groupBySymbol.has(previewSymbol)} adding={addMutation.isPending}
+        onAdd={() => addMutation.mutate({ symbol: previewSymbol, groupId: activeGroupId })}
+        onRefresh={() => refreshHk.mutate()} refreshing={hkQuotes.isFetching || refreshHk.isPending}
+        error={hkRefreshError?.message}
+      /> : <StockPreviewDialog
         symbol={previewSymbol}
         name={previewName}
         onClose={closePreview}
-        navList={previewNavList.length > 0 ? previewNavList : previewNavItems}
+        navList={(previewNavList.length > 0 ? previewNavList : previewNavItems).filter(item => !isHongKongSymbol(item.symbol))}
         onNavigate={(sym, n) => { setPreviewSymbol(sym); setPreviewName(n ?? '') }}
-      />
+      />}
 
       <DimensionMembersDialog
         target={dimensionTarget}
