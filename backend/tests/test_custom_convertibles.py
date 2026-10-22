@@ -274,6 +274,22 @@ def save_initial_snapshot(client, csv_text=CSV):
     return response.json()
 
 
+def test_sourced_disclosures_never_replace_saved_manual_research(client, monkeypatch):
+    from test_convertibles_disclosures import base, source
+
+    from app.services import convertibles_disclosures
+
+    saved = save_initial_snapshot(client)
+    original_bytes = convertibles._service.path.read_bytes()
+    monkeypatch.setattr(convertibles_disclosures, '_cached',
+        lambda symbol, bucket: source(base()).fetch(symbol, today='2026-10-22'))
+    response = client.get('/api/ext/convertibles/113063/disclosures')
+    assert response.status_code == 200
+    assert response.json()['code'] == '113063'
+    assert client.get('/api/ext/convertibles').json() == saved
+    assert convertibles._service.path.read_bytes() == original_bytes
+
+
 def test_status_checks_local_configuration_without_fetching_quotes(client):
     provider = TickFlowConvertibleProvider(
         api_key_getter=lambda: "test key",

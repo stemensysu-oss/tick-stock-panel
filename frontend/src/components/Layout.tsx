@@ -22,6 +22,7 @@ import {
 } from '@/lib/useSharedMutations'
 import { QK } from '@/lib/queryKeys'
 import { getPageScale } from '@/lib/pageZoom'
+import { useContentTypographySync } from '@/lib/contentTypography'
 import { compareByDefaultNav, defaultNavIndex, seedHiddenForNewUser } from '@/lib/navOrder'
 import {
   Settings,
@@ -374,6 +375,7 @@ export function Layout() {
   const update = useUpdateCheck()
   const hasUpdate = update.status === 'found'
   const { data: prefs } = usePreferences()
+  useContentTypographySync(prefs)
   // 数据源列表 (用于实时行情状态显示当前数据源名称)
   const { data: dataSources } = useQuery({
     queryKey: QK.dataSources,

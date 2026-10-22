@@ -11,10 +11,11 @@ const CALL = { implementation_disclosed: '源披露赎回实施安排，需核�
 export function SourcedDisclosures({ code }: { code: string }) {
   const query = useQuery({ queryKey: QK.convertibleDisclosures(code), queryFn: () => api.convertibleDisclosures(code), staleTime: 300_000, retry: false })
   const data = query.data
-  return <section aria-label="联网条款与强赎资料" className="space-y-4">
+  return <section aria-label="联网条款与强赎资料" aria-busy={query.isFetching} className="space-y-4">
     <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">联网条款与强赎资料</h3><button type="button" disabled={query.isFetching} onClick={() => void query.refetch()} className={BUTTON}><RefreshCw className="h-3.5 w-3.5" />重新读取</button></div>
     <p className="text-xs leading-relaxed text-muted">优先原有API的已实现能力；完整条款与强赎安排目前由公开资料补充，缓存最多5分钟。与手工研究独立保存，未自动确认观察条件或现金流。</p>
-    {query.isPending ? <p role="status" className="py-8 text-center text-sm text-muted">正在核对条款与实施安排…</p> : query.isError ? <ErrorState title="联网资料暂不可用" hint={query.error.message} onRetry={() => void query.refetch()} /> : data && <>
+    {query.isError && data && <p role="alert" className="rounded-card border border-danger/25 bg-danger/5 p-3 text-xs text-danger">刷新失败，保留上次结果：{query.error.message}</p>}
+    {query.isPending ? <p role="status" className="py-8 text-center text-sm text-muted">正在核对条款与实施安排…</p> : query.isError && !data ? <ErrorState title="联网资料暂不可用" hint={query.error.message} onRetry={() => void query.refetch()} retrying={query.isFetching} /> : data && <>
       <p className="rounded-card border border-warning/25 bg-warning/5 p-3 text-xs">{LIFE[data.lifecycle]} · {CALL[data.call_state]}</p>
       <dl className="grid grid-cols-2 gap-4 text-xs">{[
         ['上市日期', data.listing_date], ['退市日期', data.delisting_date], ['源结束日期（非原合同到期保证）', data.source_end_date],

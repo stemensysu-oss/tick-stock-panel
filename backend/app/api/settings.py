@@ -631,11 +631,25 @@ class MiningSchedulePrefs(BaseModel):
     mining_budget_profile: Literal["balanced", "strict"]
 
 
+class ContentTypographyPrefs(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    content_font_size: int = Field(ge=14, le=22)
+    content_font_family: Literal["default", "system", "microsoft-yahei", "pingfang", "source-han"]
+
+
+@router.put("/preferences/content-typography")
+def update_content_typography(req: ContentTypographyPrefs) -> dict:
+    from app.services import preferences
+    return preferences.set_content_typography(req.content_font_size, req.content_font_family)
+
+
 @router.get("/preferences")
 def get_preferences() -> dict:
     """返回用户偏好设置。"""
     from app.services import preferences
     return {
+        **preferences.get_content_typography(),
         "realtime_quotes_enabled": preferences.get_realtime_quotes_enabled(),
         "realtime_allowed": _realtime_allowed(),
         "watchlist_groups_in_nav": preferences.get_watchlist_groups_in_nav(),

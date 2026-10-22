@@ -76,6 +76,34 @@ def save(updates: dict) -> dict:
     return current
 
 
+CONTENT_FONT_FAMILIES = frozenset({
+    "default", "system", "microsoft-yahei", "pingfang", "source-han",
+})
+
+
+def get_content_typography() -> dict:
+    """页面正文排版。旧配置沿用当前 18px 基准, 不影响导航或图表画布。"""
+    data = load()
+    size = data.get("content_font_size", 18)
+    family = data.get("content_font_family", "default")
+    return {
+        "content_font_size": max(14, min(22, size)) if type(size) is int else 18,
+        "content_font_family": (
+            family if isinstance(family, str) and family in CONTENT_FONT_FAMILIES else "default"
+        ),
+    }
+
+
+def set_content_typography(size: int, family: str) -> dict:
+    if type(size) is not int or not 14 <= size <= 22:
+        raise ValueError("正文字号须为 14–22 的整数")
+    if not isinstance(family, str) or family not in CONTENT_FONT_FAMILIES:
+        raise ValueError("不支持的正文字体")
+    values = {"content_font_size": size, "content_font_family": family}
+    save(values)
+    return values
+
+
 def get_realtime_quotes_enabled() -> bool:
     return load().get("realtime_quotes_enabled", False)
 

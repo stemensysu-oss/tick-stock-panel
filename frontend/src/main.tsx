@@ -10,6 +10,7 @@ import { QK } from './lib/queryKeys'
 import { cn } from './lib/cn'
 import * as format from './lib/format'
 import { createAppPersister, shouldPersistQuery, PERSIST_BUSTER } from './lib/queryPersist'
+import { applyContentTypography, getContentTypography } from './lib/contentTypography'
 // 字体自托管 (@fontsource): 替代 rsms.me / Google Fonts 渲染阻塞外链,
 // 内网/离线部署不再白屏等字体。权重覆盖 tailwind 全部用量 (300-900)。
 import '@fontsource/inter/300.css'
@@ -62,6 +63,7 @@ const queryClient = new QueryClient({
 })
 
 async function bootstrap() {
+  applyContentTypography(getContentTypography())
   await initializeFrontendExtensions()
   // 页面插件能力桥: 运行时页面插件经 shim 读取宿主 api/QK/cn/format
   installTspExtBridge({ api, QK, cn, format })

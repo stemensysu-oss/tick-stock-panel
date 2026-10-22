@@ -113,11 +113,11 @@ def run_installer(installer: Path, destination: Path | None, log: Path) -> None:
         tree.stop()
 
 
-def json_request(base: str, route: str, *, body=None, timeout=3) -> dict:
+def json_request(base: str, route: str, *, body=None, timeout=3, method=None) -> dict:
     # A machine-wide proxy must not send local smoke traffic outside the runner.
     opener = build_opener(ProxyHandler({}))
     request = Request(base + route, data=json.dumps(body).encode() if body is not None else None,
-                      headers={'Content-Type': 'application/json'})
+                      headers={'Content-Type': 'application/json'}, method=method)
     try:
         with opener.open(request, timeout=timeout) as response:
             require(response.status == 200, f"{route}: expected HTTP 200")
@@ -294,7 +294,24 @@ def check_live_api(base: str) -> dict:
                       'report_date': holdings['items'][0]['report_date'], 'source': profile['provider']}
     from research_enrichment_smoke import check_enrichment
     result['fund_bond_enrichment'] = check_enrichment(base, json_request, require)
+    result['content_typography'] = check_content_typography(base)
     return result
+
+
+def check_content_typography(base: str) -> dict:
+    """Persist only isolated CI preferences, then prove restart/upgrade restores them."""
+    preferences = json_request(base, '/api/settings/preferences')
+    before = {key: preferences.get(key) for key in ('content_font_size', 'content_font_family')}
+    default = {'content_font_size': 18, 'content_font_family': 'default'}
+    chosen = {'content_font_size': 22, 'content_font_family': 'microsoft-yahei'}
+    require(before in (default, chosen), 'Content typography defaults or saved values are invalid')
+    restored = before == chosen
+    saved = json_request(base, '/api/settings/preferences/content-typography', body=chosen, method='PUT')
+    require(all(saved.get(key) == value for key, value in chosen.items()), 'Content typography update did not persist')
+    current = json_request(base, '/api/settings/preferences')
+    require(all(current.get(key) == value for key, value in chosen.items()), 'Content typography readback differs')
+    print(f'Installed content typography: 22px, microsoft-yahei; restored={restored}', flush=True)
+    return {'before': before, 'saved': chosen, 'restored': restored}
 
 
 def clean_environment(data_dir: Path, cwd: Path) -> dict[str, str]:
@@ -420,6 +437,8 @@ def main() -> None:
         report["checks"]["overwrite_preserves_data"] = True
         report["checks"]["overwrite_reuses_directory"] = True
         report["checks"]["second_launch"] = run_desktop(executable, data_dir, work, args.version, logs / "launch-second.log")
+        require(not report['checks']['first_launch']['verified_live_fallback']['content_typography']['restored'], 'First install did not start from typography defaults')
+        require(report['checks']['second_launch']['verified_live_fallback']['content_typography']['restored'], 'Overwrite upgrade did not retain typography settings')
         require(staging_inventory(staging) == initial_staging, "Smoke test modified build staging")
         report["checks"]["staging_untouched"] = True
         report["status"] = "passed"

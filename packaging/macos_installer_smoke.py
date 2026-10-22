@@ -119,6 +119,8 @@ def main():
         subprocess.run(['ditto', str(source), str(installed)], check=True)
         require(sentinel.read_text(encoding='utf8') == 'preserve-external-user-data', 'App replacement deleted external data')
         report['checks']['second_launch'] = run_app(installed, data, work, args.version, logs/'second-launch.log')
+        require(not report['checks']['first_launch']['verified_live_fallback']['content_typography']['restored'], 'First Mac launch did not use typography defaults')
+        require(report['checks']['second_launch']['verified_live_fallback']['content_typography']['restored'], 'Mac replacement did not retain typography settings')
         require(sentinel.read_text(encoding='utf8') == 'preserve-external-user-data', 'Restart deleted external data')
         report['checks']['replacement_preserved_data'] = True
         report['status'] = 'passed'

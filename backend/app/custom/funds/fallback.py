@@ -1,7 +1,6 @@
 """Fund-specific fallback; cumulative NAV is never labelled adjusted NAV."""
 from __future__ import annotations
 
-import json
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -10,8 +9,6 @@ from functools import lru_cache
 from html.parser import HTMLParser
 
 from app.custom.funds.models import (
-    FundHolding,
-    FundHoldingsResponse,
     FundNavPoint,
     FundNavResponse,
     FundProfile,
@@ -158,38 +155,9 @@ class EastmoneyFundProvider:
         return PublicFundDisclosures(self).holdings(ticker, asset_type, report_date)
 
     def holdings(self, ticker):
-        raw = self.http.get('https://fundf10.eastmoney.com/FundArchivesDatas.aspx', {
-            'type': 'jjcc', 'code': ticker[:6], 'topline': 10,
-        }).text
-        # Parse the quoted string as data; never eval this JavaScript response.
-        match = re.search(r'content\s*:\s*("(?:\\.|[^"\\])*")', raw, re.S)
-        if not match:
-            raise FundDataError(502, '公开持仓页面格式已变化')
-        html = json.loads(match[1])
-        table = re.search(r'<table\b.*?</table>', html, re.S)
-        if not table:
-            return FundHoldingsResponse(**self.meta(ticker), warnings=['公开源尚未披露股票前十大持仓；不代表没有持仓。'])
-        report = re.search(r'截止至[：:]\s*(?:<[^>]*>\s*)*(\d{4}-\d{2}-\d{2})', html[:table.start()])
-        if not report:
-            raise FundDataError(502, '公开持仓缺少报告期，未采用本次结果')
-        date.fromisoformat(report[1])
-        parser = Table()
-        parser.feed(table[0])
-        headers = [c[0] for c in parser.rows[0]]
-        positions = [headers.index(k) for k in ('股票代码', '股票名称', '占净值比例')]
-        items = []
-        for row in parser.rows[1:11]:
-            code, name, weight = (row[i][0] for i in positions)
-            if not re.fullmatch(r'\d{6}', code):
-                continue
-            links = ' '.join(row[positions[0]][1])
-            market = re.search(r'/unify/r/([01])\.' + code + r'\b', links)
-            suffix = f'.{"SH" if market[1] == "1" else "SZ"}' if market else ''
-            items.append(FundHolding(ticker=code + suffix, name=name, asset_type='stock',
-                                     weight_pct=number(weight.removesuffix('%')),
-                                     report_date=report[1]))
-        return FundHoldingsResponse(**self.meta(ticker), items=items,
-            warnings=['仅最近披露报告期的前十大股票；不是实时或完整持仓，公告日与资产配置比例未提供。'])
+        # Keep the legacy route on the same parser as the filtered route;
+        # otherwise its old six-digit-only path silently discards HK positions.
+        return self.holdings_history(ticker, 'stock')
 
 
 class FallbackFundProvider:
@@ -255,7 +223,12 @@ class FallbackFundProvider:
             if not info or info.series_kind == 'unknown':
                 raise FundDataError(502, '无法核对基金类型，本次净值/收益未采用')
             if info.series_kind == 'money':
-                result = self.fallback.nav(ticker, nav_range)
+                try:
+                    result = self.fallback.nav(ticker, nav_range)
+                except FundDataError:
+                    raise
+                except Exception:  # noqa: BLE001 -- money series bypasses the generic source chain
+                    raise FundDataError(502, '公开货币基金收益源暂不可用，本次结果未采用，请稍后重试') from None
                 return result.model_copy(update={'attempts': [
                     {'provider': 'tickflow', 'status': 'unsupported'},
                     {'provider': 'fuyao', 'status': 'unsupported'},

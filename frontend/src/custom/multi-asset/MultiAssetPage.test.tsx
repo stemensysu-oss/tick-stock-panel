@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ApiError, type MultiAssetCatalog, type MultiAssetSnapshot } from '@/lib/api'
 import { MultiAssetPage } from './MultiAssetPage'
+import { QK } from '@/lib/queryKeys'
 
 const mocks = vi.hoisted(() => ({ catalog: vi.fn(), snapshot: vi.fn(), preview: vi.fn(), save: vi.fn(), template: vi.fn(), export: vi.fn() }))
 vi.mock('@/lib/api', async importOriginal => {
@@ -121,6 +122,25 @@ it('市场手动刷新请求新行情，失败保留之前结果且不写入导�
   expect(host.textContent).toContain('公开源不可达')
   expect(host.textContent).toContain('市场测试 ETF')
   expect(mocks.save).not.toHaveBeenCalled()
+})
+
+it('手动刷新期间的后台旧响应不能覆盖已刷新的行情', async () => {
+  const named = (name: string) => ({ ...snapshot('market', 'etf', true), rows: [{ ...snapshot('market', 'etf', true).rows[0], name }] })
+  mocks.snapshot.mockResolvedValueOnce(named('原行情'))
+  await render()
+  let resolveForced!: (value: MultiAssetSnapshot) => void
+  let resolveOld!: (value: MultiAssetSnapshot) => void
+  mocks.snapshot.mockImplementation((_category: string, _mode: string, force?: boolean) => new Promise(resolve => {
+    if (force) resolveForced = resolve
+    else resolveOld = resolve
+  }))
+  await click('刷新行情')
+  await act(async () => { void client.refetchQueries({ queryKey: QK.multiAssetSnapshot('etf', 'market') }) })
+  await act(async () => resolveForced(named('刷新后的新行情'))); await settle()
+  expect(host.textContent).toContain('刷新后的新行情')
+  await act(async () => resolveOld(named('后台迟到旧行情'))); await settle()
+  expect(host.textContent).toContain('刷新后的新行情')
+  expect(host.textContent).not.toContain('后台迟到旧行情')
 })
 
 it('校验失败不提供确认入口，修正文本后需要重新预览', async () => {

@@ -131,7 +131,13 @@ class FuyaoFundProvider:
 
     def holdings_history(self, ticker, asset_type, report_date=None):
         if asset_type == 'stock' and not report_date:
-            return self.holdings(ticker)
+            # The latest endpoint deliberately mixes stocks, bonds and funds.
+            # A stock-tab request must not expose its other asset types.
+            result = self.holdings(ticker)
+            items = [item for item in result.items if item.asset_type == 'stock']
+            periods = {item.report_date for item in items}
+            return result.model_copy(update={'items': items,
+                'report_date': next(iter(periods)) if len(periods) == 1 else None})
         if not report_date:
             data = self._request(f'/api/fund/portfolio/{asset_type}-report-dates',
                 {'thscode': ticker, 'report_type': 'quarter'})

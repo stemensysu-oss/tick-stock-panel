@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import re
 from datetime import date
-from typing import Protocol
+from typing import Literal, Protocol
 
 from app.custom.funds.models import (
     NAV_RANGES,
+    FundDividendsResponse,
     FundHoldingsResponse,
     FundNavResponse,
     FundProfileResponse,
+    FundTradingResponse,
     NavRange,
 )
 
@@ -36,6 +38,14 @@ class FundDataProvider(Protocol):
 
     def holdings(self, ticker: str) -> FundHoldingsResponse: ...
 
+    def holdings_history(
+        self, ticker: str, asset_type: Literal['stock', 'bond'], report_date: str | None = None,
+    ) -> FundHoldingsResponse: ...
+
+    def dividends(self, ticker: str) -> FundDividendsResponse: ...
+
+    def trading(self, ticker: str) -> FundTradingResponse: ...
+
 
 def _validate_ticker(ticker: str) -> str:
     normalized = ticker.strip().upper()
@@ -57,7 +67,10 @@ class FundResearchService:
             raise FundDataError(422, "净值区间不受支持，请选择一周至五年的预设区间")
         return self._provider.nav(ticker, nav_range)
 
-    def holdings(self, ticker: str, asset_type=None, report_date=None) -> FundHoldingsResponse:
+    def holdings(
+        self, ticker: str, asset_type: Literal['stock', 'bond'] | None = None,
+        report_date: str | None = None,
+    ) -> FundHoldingsResponse:
         ticker = _validate_ticker(ticker)
         if report_date:
             try:
@@ -72,8 +85,8 @@ class FundResearchService:
             raise FundDataError(422, '持仓类型须为股票或债券')
         return self._provider.holdings_history(ticker, asset_type, report_date)
 
-    def dividends(self, ticker):
+    def dividends(self, ticker: str) -> FundDividendsResponse:
         return self._provider.dividends(_validate_ticker(ticker))
 
-    def trading(self, ticker):
+    def trading(self, ticker: str) -> FundTradingResponse:
         return self._provider.trading(_validate_ticker(ticker))

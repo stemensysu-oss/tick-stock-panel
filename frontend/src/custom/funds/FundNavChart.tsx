@@ -28,7 +28,7 @@ export function FundNavChart({ items, field }: { items: FundNavItem[]; field: ke
     series: [{
       name, type: 'line', data: items.map(item => item[field] ?? null),
       // 稀疏数据的孤立点始终可见；密集数据交给图表控密度，缺值两侧不连线。
-      showSymbol: true, showAllSymbol: items.filter(item => item[field] !== null).length <= 32 ? true : 'auto',
+      showSymbol: true, showAllSymbol: items.filter(item => item[field] != null).length <= 32 ? true : 'auto',
       symbolSize: 4, connectNulls: false,
       lineStyle: { width: 2, color: '#3b82f6' }, itemStyle: { color: '#3b82f6' },
       areaStyle: { color: 'rgba(59,130,246,0.07)' },

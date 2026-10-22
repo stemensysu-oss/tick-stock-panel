@@ -20,6 +20,7 @@ import {
 } from '@/lib/voiceBroadcast'
 import { loadStockExternalTemplate, saveStockExternalTemplate } from '@/lib/stock-external-link'
 import { ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, getPageZoom, setPageZoom } from '@/lib/pageZoom'
+import { ContentTypographySettings } from './ContentTypographySettings'
 
 export function SettingsSystemPanel() {
   const qc = useQueryClient()
@@ -359,6 +360,8 @@ export function SettingsSystemPanel() {
           <ZoomIn className="h-4 w-4 text-accent" />
           <h3 className="text-sm font-medium text-foreground">界面</h3>
         </div>
+
+        <ContentTypographySettings />
 
         <div className="flex items-center justify-between gap-4 py-2">
           <div className="min-w-0">

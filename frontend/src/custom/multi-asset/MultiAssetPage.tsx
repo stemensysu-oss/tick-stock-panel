@@ -62,7 +62,13 @@ function CategoryWorkspace({ category, mode, previewOnly, onDemo }: { category: 
   async function refreshMarket() {
     if (mode !== 'market') { void snapshot.refetch(); return }
     setRefreshing(true); setDownloadError('')
-    try { client.setQueryData(QK.multiAssetSnapshot(category.id, mode), await api.multiAssetSnapshot(category.id, mode, true)) }
+    try {
+      const data = await api.multiAssetSnapshot(category.id, mode, true)
+      // A focus/background read started during this refresh may still contain
+      // an older server snapshot. Cancel it before publishing the forced result.
+      await client.cancelQueries({ queryKey: QK.multiAssetSnapshot(category.id, mode), exact: true })
+      client.setQueryData(QK.multiAssetSnapshot(category.id, mode), data)
+    }
     catch (error) { setDownloadError(`刷新失败，保留上次结果：${error instanceof Error ? error.message : '取数失败'}`) }
     finally { setRefreshing(false) }
   }

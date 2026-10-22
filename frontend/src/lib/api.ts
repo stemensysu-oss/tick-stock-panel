@@ -2108,7 +2108,17 @@ export interface ApiTokenRecord {
   revoked: boolean
 }
 
+export type ContentFontFamily = 'default' | 'system' | 'microsoft-yahei' | 'pingfang' | 'source-han'
+
+export interface ContentTypography {
+  /** 页面正文基准字号, 14–22px; 默认18保留当前放大一号的外观。 */
+  content_font_size: number
+  content_font_family: ContentFontFamily
+}
+
 export interface Preferences {
+  content_font_size?: number
+  content_font_family?: ContentFontFamily
   realtime_quotes_enabled: boolean
   watchlist_groups_in_nav: boolean
   minute_sync_enabled: boolean
@@ -2768,6 +2778,10 @@ export const api = {
     }),
 
   preferences: () => request<Preferences>('/api/settings/preferences'),
+  updateContentTypography: (payload: ContentTypography) =>
+    request<ContentTypography>('/api/settings/preferences/content-typography', {
+      method: 'PUT', body: JSON.stringify(payload),
+    }),
   dataSources: () => request<DataSourcesResponse>('/api/settings/data-sources'),
   capabilityMatrix: () => request<CapabilityMatrix>('/api/settings/capability-matrix'),
   dataSource: (name: string) => request<CustomSourceConfig>(`/api/settings/data-sources/${encodeURIComponent(name)}`),

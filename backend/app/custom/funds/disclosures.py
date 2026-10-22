@@ -140,8 +140,10 @@ class PublicFundDisclosures:
                 if not re.fullmatch(r'\d{5,6}', code) or not weight.endswith('%'):
                     raise FundDataError(502, '公开持仓代码或比例口径异常')
                 links = ' '.join(row[headers.index(code_label)][1])
-                market = re.search(r'/unify/r/([01])\.' + code + r'\b', links)
-                suffix = f'.{"SH" if market[1] == "1" else "SZ"}' if market else ''
+                market = re.search(r'/unify/r/(0|1|116)\.' + code + r'\b', links)
+                # Keep five-digit positions, but only add a market when the
+                # source's security link explicitly supplies its identity.
+                suffix = '.' + {'0': 'SZ', '1': 'SH', '116': 'HK'}[market[1]] if market else ''
                 items.append(FundHolding(ticker=code + suffix, name=name, asset_type=asset_type,
                     weight_pct=number(weight[:-1]), report_date=selected))
             break
