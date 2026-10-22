@@ -46,7 +46,7 @@ const COMPUTE_REQUEST_TIMEOUT_MS = 300_000
  *  /day, 后端超时 120s) 必须把这层同步放宽。 */
 const extPullTimeoutMs = (timeoutSeconds?: number) => (timeoutSeconds ?? 30) * 1000 + 10_000
 
-async function request<T>(path: string, init?: RequestOptions): Promise<T> {
+async function request<T>(path: string, init?: RequestOptions, readResponse: (response: Response) => Promise<T> = response => response.json()): Promise<T> {
   const { quiet, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, ...fetchInit } = init ?? {}
   const isFormData = fetchInit.body instanceof FormData
   const headers: Record<string, string> = {}
@@ -94,7 +94,7 @@ async function request<T>(path: string, init?: RequestOptions): Promise<T> {
     if (res.status !== 401 && !quiet) toast(msg, 'error')
     throw new ApiError(msg, res.status)
   }
-  return res.json() as Promise<T>
+  return readResponse(res)
 }
 
 // ===== Capabilities =====
@@ -2521,9 +2521,67 @@ export interface ConvertiblePreview {
   base_revision: string
 }
 
+// 多资产研究：只读演示与用户导入快照隔离；不存在隐式实时行情回退。
+export type MultiAssetMode = 'imported' | 'demo'
+export interface MultiAssetColumn {
+  key: string
+  label: string
+  type: 'text' | 'number' | 'date'
+  unit?: string | null
+  required?: boolean
+  description?: string | null
+}
+export interface MultiAssetCategory {
+  id: string
+  label: string
+  description: string
+  fields: MultiAssetColumn[]
+  columns: MultiAssetColumn[]
+  notes: string[]
+  planned_sources: string[]
+  live_status: 'unavailable'
+}
+export interface MultiAssetCatalog {
+  schema_version: 1
+  categories: MultiAssetCategory[]
+  existing_modules: { label: string; path: string }[]
+}
+export interface MultiAssetRow {
+  code: string
+  name: string
+  currency: string
+  source_name: string
+  as_of: string
+  source_url?: string | null
+  data_status: MultiAssetMode
+  metrics: Record<string, number | null>
+  warnings: string[]
+  [key: string]: string | number | null | undefined | Record<string, number | null> | string[]
+}
+export interface MultiAssetSnapshot {
+  schema_version: 1
+  category: string
+  mode: MultiAssetMode
+  revision: string
+  updated_at: string | null
+  data_status: 'empty' | MultiAssetMode
+  live_status: 'unavailable'
+  rows: MultiAssetRow[]
+  warnings: string[]
+}
+export interface MultiAssetImportInput { category: string; csv_text: string; expected_revision: string }
+export interface MultiAssetImportPreview extends MultiAssetSnapshot { row_count: number }
+
 // ===== API surface =====
 export const api = {
   health: () => request<{ status: string; version: string; mode: string }>('/health'),
+
+  multiAssetCatalog: () => request<MultiAssetCatalog>('/api/multi-asset/catalog', { quiet: true }),
+  multiAssetSnapshot: (category: string, mode: MultiAssetMode) => request<MultiAssetSnapshot>(`/api/multi-asset/snapshot?category=${encodeURIComponent(category)}&mode=${mode}`, { quiet: true }),
+  previewMultiAssetImport: (input: MultiAssetImportInput) => request<MultiAssetImportPreview>('/api/multi-asset/import/preview', { method: 'POST', body: JSON.stringify(input), quiet: true }),
+  importMultiAsset: (input: MultiAssetImportInput & { confirmed: true }) => request<MultiAssetSnapshot>('/api/multi-asset/import', { method: 'POST', body: JSON.stringify(input), quiet: true }),
+  multiAssetTemplate: (category: string) => request<string>(`/api/multi-asset/template?category=${encodeURIComponent(category)}`, { quiet: true }, response => response.text()),
+  exportMultiAsset: (category: string) => request<string>(`/api/multi-asset/export?category=${encodeURIComponent(category)}`, { quiet: true }, response => response.text()),
 
   fundResearchStatus: () => request<FundResearchStatus>('/api/ext/funds/status', { quiet: true }),
   fundProfile: (ticker: string) =>

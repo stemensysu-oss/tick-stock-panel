@@ -28,6 +28,9 @@ export const QK = {
   fundHoldings: (ticker: string) => ['fund-research', 'holdings', ticker] as const,
   convertibles: ['convertible-research', 'dataset'] as const,
   convertibleSourceStatus: ['convertible-research', 'source-status'] as const,
+  multiAssetCatalog: ['multi-asset', 'catalog'] as const,
+  multiAssetSnapshots: ['multi-asset', 'snapshot'] as const,
+  multiAssetSnapshot: (category: string, mode: 'imported' | 'demo') => ['multi-asset', 'snapshot', category, mode] as const,
 
   // Watchlist
   watchlist:            ['watchlist'] as const,
