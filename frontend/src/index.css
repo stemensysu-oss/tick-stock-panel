@@ -146,3 +146,47 @@ body {
   animation: breath-sync 2.8s ease-in-out infinite;
 }
 
+
+/* One 2px font-size step for page content and content portals. Navigation
+ * stays outside this scope; no page zoom, dimension or icon changes. */
+.content-typography, body > :not(#root):not(script):not(style) { font-size: 18px; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-[7px]"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-[7px]"]) { font-size: 9px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-[8px]"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-[8px]"]) { font-size: 10px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-[9px]"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-[9px]"]) { font-size: 11px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-[10px]"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-[10px]"]) { font-size: 12px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-[11px]"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-[11px]"]) { font-size: 13px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-[12px]"], [class~="text-xs"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-[12px]"], [class~="text-xs"]) { font-size: 14px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-[13px]"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-[13px]"]) { font-size: 15px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-sm"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-sm"]) { font-size: 16px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-[15px]"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-[15px]"]) { font-size: 17px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-[16px]"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-[16px]"]) { font-size: 18px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-lg"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-lg"]) { font-size: 20px; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-xl"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-xl"]) { font-size: 22px; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-2xl"], [class~="text-[24px]"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-2xl"], [class~="text-[24px]"]) { font-size: 26px; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="text-3xl"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="text-3xl"]) { font-size: 32px; }
+@media (min-width: 640px) {
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="sm:text-xs"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="sm:text-xs"]) { font-size: 14px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="sm:text-2xl"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="sm:text-2xl"]) { font-size: 26px; }
+}
+@media (min-width: 1280px) {
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="xl:text-sm"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="xl:text-sm"]) { font-size: 16px; line-height: 1.5; }
+:is(.content-typography, body > :not(#root):not(script):not(style)):is([class~="xl:text-[16px]"]),
+:is(.content-typography, body > :not(#root):not(script):not(style)) :is([class~="xl:text-[16px]"]) { font-size: 18px; line-height: 1.5; }
+}

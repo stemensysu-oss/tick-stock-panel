@@ -158,6 +158,7 @@ for pkg in (
 # ── 随包资源 (只读, 放进 _MEIPASS) ────────────────────────────────────
 # 前端 dist → static/ (config.py frozen 模式读 _MEIPASS/static)
 datas += [(FRONTEND_DIST, "static")]
+datas += [(str(ROOT / "backend/app/data_providers/research_qdii_catalog.json"), "app/data_providers")]
 # tiers.yaml → 包根 (config.py frozen 模式读 _MEIPASS/tiers.yaml)
 datas += [(TIERS_YAML, ".")]
 # frontend/package.json → 包根 (app/__init__.py frozen 模式读 _MEIPASS/package.json,

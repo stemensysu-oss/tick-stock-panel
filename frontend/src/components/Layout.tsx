@@ -1122,7 +1122,7 @@ export function Layout() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-        className="h-full overflow-auto scrollbar-gutter-stable"
+        className="content-typography h-full overflow-auto scrollbar-gutter-stable"
       >
         {streamStatus === 'reconnecting' && (
           <div
@@ -1144,16 +1144,18 @@ export function Layout() {
           <Outlet />
         </Suspense>
       </motion.main>
-      <ToastContainer />
-      <AlertToastContainer />
-      <AiAnalysisHost />
-      <AiReportBubble />
-      <StockAnalysisHost />
-      <StockAnalysisBubble />
+      <div className="content-typography contents">
+        <ToastContainer />
+        <AlertToastContainer />
+        <AiAnalysisHost />
+        <AiReportBubble />
+        <StockAnalysisHost />
+        <StockAnalysisBubble />
+      </div>
 
       {/* 开启实时行情 + 排队中的挖掘任务 → 冲突确认 */}
       {miningQueuedWarning != null && (
-        <div {...miningWarnBackdrop} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+        <div {...miningWarnBackdrop} className="content-typography fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div onClick={e => e.stopPropagation()} className="w-full max-w-sm rounded-2xl border border-border bg-surface p-5 shadow-2xl">
             <div className="text-sm font-semibold text-foreground">
               有挖掘任务正在排队

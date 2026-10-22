@@ -12,7 +12,7 @@ NUMERIC = frozenset({'price', 'nav', 'h_price', 'fx_hkd_cny', 'deal_price',
                      'dividend_per_share', 'rate_pct', 'issue_price', 'pe', 'pb',
                      'change_pct', 'yield_pct', 'income_per_10k'})
 LABELS = {
-    'code': '代码', 'name': '名称', 'currency': '价格币种', 'source_name': '填写来源',
+    'code': '代码', 'name': '名称', 'currency': '价格币种', 'source_name': '数据来源',
     'as_of': '资料基准日', 'source_url': '来源链接', 'price': '价格',
     'price_as_of': '价格日期', 'notes': '备注', 'nav': '单位净值',
     'nav_currency': '净值币种', 'nav_as_of': '净值日期', 'h_code': 'H 股代码',
@@ -83,26 +83,31 @@ _CATEGORIES = [
               ['price', 'nav', 'nav_premium_pct', 'subscription_status'],
               [_NAV_NOTE, '申购状态需人工核验；价格差不等于可完成套利。'],
               ['基金管理人净值/限购公告']),
+    _category('hk', '港股行情', '香港上市证券的港元报价', ['change_pct'],
+              ['price', 'change_pct', 'price_as_of'],
+              ['价格以港元 HKD 展示；报价时间以来源时点为准，公开补充源可能延迟。',
+               '清单范围与缺失记录会注明，不代表全部港交所证券；不接入下单。'],
+              ['TickFlow 港股行情', '公开港股目录及腾讯报价']),
     _category('ah', 'A/H 比价', '以明确汇率比较两地股价',
               ['h_code', 'h_price', 'h_currency', 'h_price_as_of', 'fx_hkd_cny', 'fx_as_of'],
               ['price', 'h_price', 'fx_hkd_cny', 'ah_premium_pct'],
               ['仅人民币 A 股、港元 H 股；A/H/汇率日期须等于资料基准日。',
                'A/H溢价=(A股价格/(H股价格×每港元人民币汇率)-1)×100；未计税费或可互换性。'],
-              ['交易所证券信息', '经授权港股行情', '用户核验的汇率来源']),
-    _category('qdii', 'T+0 QDII', '跨境基金日期与溢价研究', [*NAV, 'subscription_status'],
+              ['公开明确 A/H 配对目录', '原 API 优先两地报价', '腾讯 HKDCNY 参考汇率（独立时点）']),
+    _category('qdii', 'T+0 跨境 / QDII', '沪市跨境 ETF / LOF 回转名单与报价', [*NAV, 'subscription_status'],
               ['price', 'nav', 'nav_premium_pct', 'subscription_status'],
-              [_NAV_NOTE, '海外休市、净值时差和限购需单独核验；类别名称不验证任何标的 T+0 资格。'],
-              ['基金管理人净值/限购公告', '交易所交易规则']),
-    _category('dividends', '分红', '现金股息与明确期间收益率', [*DIVIDEND, 'event_date'],
-              ['price', 'dividend_per_share', 'dividend_yield_pct', 'event_date'],
+              [_NAV_NOTE, 'T+0 资格以注明日期的交易所或管理人文件为依据；净值时差、海外休市和限购需单独核验。'],
+              ['上交所当日回转基金分类目录', '原 API 优先场内报价；净值/限购须独立核验']),
+    _category('dividends', '分红', '现金分红方案与实施事件', [*DIVIDEND, 'event_date', 'event_type'],
+              ['event_type', 'dividend_per_share', 'event_date', 'dividend_yield_pct'],
               ['所填期间股息率=期间每股现金分红/价格×100，不自动年化，不推断未来分红。',
                '必须明确币种、期间开始/结束与口径；滚动12个月要求完整且截至价格日。'],
-              ['上市公司分红实施公告', '交易所公告']),
+              ['东方财富公开分红方案日历（最近有限公告窗口）', '上市公司原始公告须独立核验']),
     _category('ipo', '新股', '发行价格与申购事件清单',
               ['issue_price', 'event_date', 'subscription_status'],
               ['issue_price', 'event_date', 'subscription_status'],
-              ['事件清单仅依据导入文件；不自动申购，不验证额度或中签结果。'],
-              ['交易所发行/上市公告']),
+              ['网络事件清单展示来源提供的发行/申购信息；不自动申购，不验证额度或中签结果。'],
+              ['扶摇新股发行日历', '东方财富公开新股日历']),
     _category('bonds', '债券', '债券价格、到期与收益率口径',
               ['yield_pct', 'yield_basis', 'maturity_date'],
               ['price', 'yield_pct', 'yield_basis', 'maturity_date'],
@@ -135,7 +140,7 @@ def field_metadata(key, category=None):
 
 
 def catalog():
-    from app.data_providers.research_market import FILTERS
+    from app.services.multi_asset_market import LIVE_CATEGORIES
     categories = []
     for raw in _CATEGORIES:
         item = deepcopy(raw)
@@ -143,7 +148,7 @@ def catalog():
         item['columns'] = [field_metadata(key, item['id']) for key in
                            ['code', 'name', *item.pop('column_keys'), 'currency', 'as_of',
                             'source_name']]
-        item['live_status'] = 'available' if item['id'] in FILTERS else 'unavailable'
+        item['live_status'] = 'available' if item['id'] in LIVE_CATEGORIES else 'unavailable'
         item['notes'].append('市场行情按 TickFlow → 扶摇 → 公开补充源（东方财富，异常时备用目录与腾讯报价）尝试；仅集成能力范围内的字段。导入与虚构演示不视为已验证行情。')
         categories.append(item)
     return dict(schema_version=1, categories=categories, existing_modules=[

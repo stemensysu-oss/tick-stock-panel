@@ -215,8 +215,9 @@ def client(tmp_path, monkeypatch):
 
 def test_api_catalog_preview_confirmation_conflict_and_export(client):
     catalog = client.get('/api/multi-asset/catalog').json()
-    assert len(catalog['categories']) == 12
-    assert {c['id'] for c in catalog['categories'] if c['live_status'] == 'available'} == {'etf', 'lof', 'cash', 'reits', 'indices', 'bonds'}
+    assert len(catalog['categories']) == 13
+    assert {c['id'] for c in catalog['categories'] if c['live_status'] == 'available'} == {
+        'etf', 'lof', 'cash', 'reits', 'indices', 'bonds', 'hk', 'ah', 'qdii', 'dividends', 'ipo'}
     assert client.get('/api/multi-asset/snapshot?category=etf').json()['data_status'] == 'empty'
     payload = dict(category='etf', csv_text=CSV, expected_revision='0')
     assert client.post('/api/multi-asset/import/preview', json=payload).json()['row_count'] == 1

@@ -30,8 +30,9 @@ FILTERS = {
     'cash': 'b:MK0401',
     'reits': 'm:1 t:9 e:97,m:0 t:10 e:97',
     'indices': 'm:1 t:1,m:0 t:5',
+    'hk': 'm:128 t:3,m:128 t:4',
 }
-UNIVERSES = {'bonds': 'CN_Bond', 'etf': 'CN_ETF', 'indices': 'CN_Index'}
+UNIVERSES = {'bonds': 'CN_Bond', 'etf': 'CN_ETF', 'indices': 'CN_Index', 'hk': 'HK_Equity'}
 LABELS = {'tickflow': 'TickFlow', 'fuyao': '扶摇', PUBLIC: '东方财富公开补充源',
           'tencent_public': '腾讯公开补充行情', 'sina_tencent_public': '公开备用目录与行情'}
 DISCLOSURE = '公开网页补充源可能延迟或中断；报价时间不等于抓取时间。未提供的净值、条款、收益率和公告保持未知。'
@@ -95,7 +96,8 @@ class PublicHTTP:
     """Fixed public hosts only; no inherited authentication or credential logs."""
     hosts = frozenset({'push2.eastmoney.com', 'api.fund.eastmoney.com',
                        'fundf10.eastmoney.com', 'datacenter-web.eastmoney.com',
-                       'vip.stock.finance.sina.com.cn', 'qt.gtimg.cn'})
+                       'vip.stock.finance.sina.com.cn', 'qt.gtimg.cn',
+                       'www.aastocks.com', 'query.sse.com.cn'})
 
     def get(self, url, params=None):
         for attempt in range(2):
@@ -124,7 +126,9 @@ class PublicHTTP:
             target = url + ('?' + urlencode(params) if params else '')
             request = Request(target, headers={
                 'User-Agent': 'Mozilla/5.0', 'Accept-Encoding': 'identity',
-                'Referer': 'https://quote.eastmoney.com/' if host == 'push2.eastmoney.com' else 'https://fundf10.eastmoney.com/',
+                'Referer': ('https://www.sse.com.cn/' if host == 'query.sse.com.cn' else
+                            'https://quote.eastmoney.com/' if host == 'push2.eastmoney.com' else
+                            'https://fundf10.eastmoney.com/'),
             })
             # urllib's HTTP/1.1 transport is compatible with this public feed;
             # the default httpx transport can be disconnected by its servers.
@@ -197,7 +201,8 @@ class EastmoneyMarketProvider:
         return output
 
     def market(self, category):
-        if category not in FILTERS:
+        if category not in FILTERS or category == 'hk':
+            # The integrated clist schema has no verified quote currency for HK counters.
             raise NotImplementedError
         return self._list({'fs': FILTERS[category]})
 
@@ -227,6 +232,7 @@ class TickFlowResearchProvider:
     name = 'tickflow'
 
     def _fetch(self, **kwargs):
+        self.metadata_attempts = []
         from tickflow import TickFlow
 
         from app import secrets_store
@@ -239,28 +245,67 @@ class TickFlowResearchProvider:
             raw = client.quotes.get(**kwargs)
         finally:
             client.close()
-        if not isinstance(raw, list) or len(raw) > 2000:
+        if not isinstance(raw, list) or len(raw) > (6000 if kwargs.get('universes') == ['HK_Equity'] else 2000):
             raise ResearchSourceError('TickFlow 清单为空或超限')
+        if kwargs.get('universes') == ['HK_Equity']:
+            # Bound metadata requests before fetching any missing currency data.
+            raw = sorted(raw, key=lambda r: number(r.get('amount')) or 0, reverse=True)[:500]
+        currency_metadata = {}
+        missing_currency = [r['symbol'] for r in raw
+                            if re.fullmatch(r'\d{5}\.HK', r.get('symbol', ''))
+                            and not (r.get('currency') or (r.get('ext') or {}).get('currency'))]
+        if missing_currency:
+            from app.data_providers.research_public_backup import PublicBackupProvider
+            self.metadata_attempts = [
+                {'provider': p, 'dataset': 'quote_currency', 'status': 'unsupported'}
+                for p in ('tickflow', 'fuyao')]
+            try:
+                currency_metadata = {r.symbol: r for r in PublicBackupProvider().quotes(missing_currency)}
+                self.metadata_attempts.append({'provider': 'tencent_public', 'dataset': 'quote_currency',
+                    'status': 'success' if currency_metadata else 'empty', 'rows': len(currency_metadata)})
+            except (ResearchSourceError, UnicodeError, ValueError):
+                # Unknown currency is not permission to relabel a RMB dual counter.
+                self.metadata_attempts.append({'provider': 'tencent_public', 'dataset': 'quote_currency', 'status': 'failed'})
         rows = []
         for row in raw:
             symbol = row.get('symbol', '')
-            if not re.fullmatch(r'\d{6}\.(SH|SZ)', symbol):
+            if not re.fullmatch(r'(?:\d{6}\.(SH|SZ)|\d{5}\.HK)', symbol):
+                continue
+            ext = row.get('ext') or {}
+            currency = row.get('currency') or ext.get('currency')
+            currency_info = currency_metadata.get(symbol)
+            if not currency and currency_info:
+                currency = currency_info.extra.get('currency')
+            if symbol.endswith('.HK') and currency != 'HKD':
+                # SDK quote schema does not promise a currency. RMB dual counters
+                # exist: never infer HKD from the .HK suffix.
                 continue
             price = number(row.get('last_price'), positive=True)
             ext = row.get('ext') or {}
             change = number(ext.get('change_pct'))
             turnover = number(ext.get('turnover_rate'))
-            rows.append(MarketRow(symbol, row.get('name') or symbol, price,
+            extra = {'currency': currency} if symbol.endswith('.HK') else {}
+            if currency_info:
+                extra.update(currency_source=currency_info.source, currency_quote_at=currency_info.quote_at,
+                             coverage_note='主 API 价格与报价时间保持不变；缺失的港股币种由公开来源当次明确提供，未采用补充源价格。')
+            rows.append(MarketRow(symbol, row.get('name') or ext.get('name') or symbol, price,
                                   quote_time(row.get('timestamp'), milliseconds=True), self.name,
                                   change * 100 if change is not None else None,
                                   number(row.get('amount')),
-                                  turnover * 100 if turnover is not None else None))
+                                  turnover * 100 if turnover is not None else None,
+                                  extra))
         return rows
 
     def market(self, category):
         if category not in UNIVERSES:
             raise NotImplementedError
-        return self._fetch(universes=[UNIVERSES[category]])
+        rows = self._fetch(universes=[UNIVERSES[category]])
+        if category == 'hk':
+            from dataclasses import replace
+            rows = [replace(row, extra={**row.extra, 'coverage_note':
+                    '港股展示主接口按成交额排序的前 500 条有效港元报价；非全港股，非人民币双柜台。' + row.extra.get('coverage_note', '')})
+                    for row in sorted(rows, key=lambda r: r.amount or 0, reverse=True)[:500]]
+        return rows
 
     def quotes(self, symbols):
         return self._fetch(symbols=symbols)
@@ -323,6 +368,7 @@ class ResearchMarketService:
                          and (requested is None or r.symbol in requested)]
                 attempts.append({'provider': provider.name,
                                  'status': 'success' if valid else 'empty', 'rows': len(valid)})
+                attempts.extend(getattr(provider, 'metadata_attempts', []))
                 # Never replace a successful primary quote with a public fallback quote.
                 for row in valid:
                     found.setdefault(row.symbol, row)
@@ -339,14 +385,20 @@ class ResearchMarketService:
                                provider.name, operation, reason)
         if not found:
             raise ResearchSourceError('所有可用数据源均未返回有效行情；原数据已保留，请稍后重试或检查主 API 权限')
-        warnings = [DISCLOSURE] if any(r.source in {PUBLIC, 'tencent_public'} for r in found.values()) else []
-        if operation == 'market' and any(r.source == 'tencent_public' for r in found.values()):
+        warnings = [DISCLOSURE] if any(r.source in {PUBLIC, 'tencent_public'}
+                     or r.extra.get('currency_source') == 'tencent_public' for r in found.values()) else []
+        warnings.extend(sorted({r.extra['coverage_note'] for r in found.values()
+                                if r.extra.get('currency_source') and r.extra.get('coverage_note')}))
+        if operation == 'market' and argument != 'hk' and any(r.source == 'tencent_public' for r in found.values()):
             warnings.append('公开备用行情只保留最近 30 天有来源时点的记录；现金管理仅两只代表货币 ETF，指数仅六只代表指数，均非全市场目录。')
+            warnings.extend(sorted({r.extra['coverage_note'] for r in found.values()
+                                    if r.extra.get('coverage_note')}))
+        if operation == 'market' and argument == 'hk':
             warnings.extend(sorted({r.extra['coverage_note'] for r in found.values()
                                     if r.extra.get('coverage_note')}))
         if requested is not None and requested - found.keys():
             warnings.append(f'{len(requested - found.keys())} 个标的未返回有效报价，未伪造价格。')
-        return MarketBatch(list(found.values()), datetime.now(SH).isoformat(timespec='seconds'), attempts, warnings)
+        return MarketBatch(list(found.values()), datetime.now(SH).isoformat(timespec='seconds'), attempts, list(dict.fromkeys(warnings)))
 
 
 _CACHE, _LOCK = {}, threading.Lock()

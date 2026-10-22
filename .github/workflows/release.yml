@@ -11,7 +11,7 @@ name: 桌面客户端发布
 #   - 版本号通过 input 传入, 与 tag 解耦, 更灵活
 #
 # 使用:
-#   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.14 -f platforms=windows
+#   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.15 -f platforms=windows
 #   或 GitHub 网页 Actions → 桌面客户端发布 → Run workflow
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ on:
       version:
         description: '版本号 (必须与 frontend/package.json 一致；个人 fork 仅构建，不发布 Release/tag)'
         required: true
-        default: 'v0.3.14'
+        default: 'v0.3.15'
       platforms:
         description: '要构建的平台 (逗号分隔: windows,macos,linux)'
         required: true

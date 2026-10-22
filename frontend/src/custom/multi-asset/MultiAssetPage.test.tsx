@@ -147,3 +147,33 @@ it('确认导入后取消早先读取，迟到旧快照不能覆盖已保存资�
   expect(host.textContent).not.toContain('开始建立 ETF 研究清单')
   expect(host.querySelector('textarea')).toBeNull()
 })
+
+it.each([
+  ['hk', '港股', '港股价格为港元'],
+  ['dividends', '分红', '每股股息不等于过去一年股息'],
+  ['ipo', '新股', '过期申购不视为可申购'],
+  ['ah', 'A/H 比价', '不能直接相除'],
+  ['qdii', 'T+0 QDII', '跨境不全是 QDII'],
+])('动态网络类别 %s 请求独立数据并显示口径', async (id, label, disclosure) => {
+  mocks.catalog.mockResolvedValue({ ...catalog, categories: [catalog.categories[0],
+    { ...catalog.categories[0], id, label, live_status: 'available' }] })
+  mocks.snapshot.mockImplementation(async (category, mode) => ({
+    ...snapshot(mode, category, true), data_status: mode,
+    rows: [{ ...snapshot(mode, category, true).rows[0], data_status: mode,
+      name: '网络研究标的', code: id === 'hk' ? '00700.HK' : '513100.SH',
+      currency: id === 'hk' ? 'HKD' : 'CNY', quote_at: '2026-10-22T15:00:00+08:00',
+      eligibility_label: '历史目录候选 · 资格待复核', eligibility_as_of: '2026-10-22',
+      eligibility_source_url: 'https://etf.sse.com.cn/fundlist/', fx_quote_at: '2026-10-22T09:15:00+08:00',
+      fx_source_name: '测试汇率源', fx_source_url: 'javascript:alert(1)' }],
+  }))
+  await render(); await click(label)
+  expect(mocks.snapshot).toHaveBeenLastCalledWith(id, 'market')
+  expect(host.textContent).toContain(disclosure)
+  if (id === 'hk') expect(host.textContent).toContain('HKD')
+  await click('查看 网络研究标的 详情')
+  expect(host.textContent).toContain('历史目录候选 · 资格待复核')
+  expect(host.textContent).toContain('2026-10-22T09:15:00+08:00')
+  expect(host.querySelector('a[href="https://etf.sse.com.cn/fundlist/"]')).not.toBeNull()
+  expect(host.querySelector('a[href^="javascript:"]')).toBeNull()
+  expect(mocks.snapshot).not.toHaveBeenCalledWith(id, 'demo')
+})

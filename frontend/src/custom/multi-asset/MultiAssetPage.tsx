@@ -21,7 +21,7 @@ function CapabilityTable({ catalog }: { catalog: MultiAssetCatalog }) {
   return <details className="rounded-card border border-border bg-surface">
     <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-secondary">功能与数据能力一览 · {catalog.categories.length} 类资产</summary>
     <p className="px-4 pb-3 text-xs leading-relaxed text-muted">行情优先 TickFlow、扶摇，失败后才使用公开补充源。事件、净值与交易资格需要独立数据集；不抓取登录后的集思录数据。</p>
-    <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-xs"><caption className="sr-only">多资产功能与数据源矩阵</caption><thead className="border-y border-border bg-elevated/40 text-muted"><tr>{['类别', '研究能力', '当前数据', '研究字段的候选来源'].map(label => <th key={label} className="px-4 py-2.5 font-medium">{label}</th>)}</tr></thead><tbody className="divide-y divide-border/60">{catalog.categories.map(category => <tr key={category.id}><td className="whitespace-nowrap px-4 py-3 font-medium">{category.label}</td><td className="px-4 py-3 text-secondary">{category.description}</td><td className="px-4 py-3 text-muted">{category.live_status === 'available' ? '市场行情 / 用户导入 / 演示' : '用户导入 / 演示'}</td><td className="px-4 py-3 text-muted">{category.planned_sources.join('；')}</td></tr>)}</tbody></table></div>
+    <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-xs"><caption className="sr-only">多资产功能与数据源矩阵</caption><thead className="border-y border-border bg-elevated/40 text-muted"><tr>{['类别', '研究能力', '当前数据', '研究字段的候选来源'].map(label => <th key={label} className="px-4 py-2.5 font-medium">{label}</th>)}</tr></thead><tbody className="divide-y divide-border/60">{catalog.categories.map(category => <tr key={category.id}><td className="whitespace-nowrap px-4 py-3 font-medium">{category.label}</td><td className="px-4 py-3 text-secondary">{category.description}</td><td className="px-4 py-3 text-muted">{category.live_status === 'available' ? '网络数据 / 用户导入 / 演示' : '用户导入 / 演示'}</td><td className="px-4 py-3 text-muted">{category.planned_sources.join('；')}</td></tr>)}</tbody></table></div>
   </details>
 }
 
@@ -31,7 +31,7 @@ export function MultiAssetPage({ previewOnly = false }: { previewOnly?: boolean 
   const catalog = useQuery({ queryKey: QK.multiAssetCatalog, queryFn: api.multiAssetCatalog, staleTime: 300_000, retry: false })
   const category = catalog.data?.categories.find(item => item.id === selected) ?? catalog.data?.categories[0]
   return <div className="min-w-0">
-    <PageHeader title="多资产工作台" subtitle="按资产组织研究 · 追溯数据来源 · 保留原有工作台" right={<span className="hidden shrink-0 rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-medium text-accent sm:block">多资产研究 · 第一期</span>} />
+    <PageHeader title="多资产工作台" subtitle="按资产组织研究 · 追溯数据来源 · 保留原有工作台" right={<span className="hidden shrink-0 rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-medium text-accent sm:block">多资产研究 · 数据可追溯</span>} />
     <main className="mx-auto max-w-[1600px] space-y-5 p-4 sm:p-6">
       {previewOnly && <div role="status" className="rounded-card border border-warning/30 bg-warning/5 p-3 text-xs leading-relaxed text-secondary"><strong className="text-warning">单文件演示 · 虚构数据 · 不连接行情</strong><p className="mt-1">可体验分类、筛选、自选与详情；CSV 导入导出和原有模块请在完整 TSP 中使用。</p></div>}
       <section className="flex flex-col gap-4 rounded-card border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
@@ -93,15 +93,15 @@ function CategoryWorkspace({ category, mode, previewOnly, onDemo }: { category: 
   }
   return <div className="space-y-4">
     <div className={cn('rounded-card border px-4 py-3 text-xs leading-relaxed', mode === 'demo' ? 'border-warning/30 bg-warning/5 text-secondary' : 'border-border bg-surface text-secondary')} role="status">
-      <strong className={mode === 'demo' ? 'text-warning' : 'text-foreground'}>{mode === 'demo' ? '当前为虚构演示数据，不可用于投资判断。' : mode === 'market' ? '当前为网络市场行情，来源与报价时间随每行展示。' : '当前为用户导入资料，来源与日期由用户填写，尚未核验。'}</strong><p className="mt-1 text-muted">缺失值显示 --；计算仅使用符合日期、币种及口径要求的已填字段。</p>
+      <strong className={mode === 'demo' ? 'text-warning' : 'text-foreground'}>{mode === 'demo' ? '当前为虚构演示数据，不可用于投资判断。' : mode === 'market' ? '当前为网络市场行情与公开披露数据，来源及其时点随每行展示。' : '当前为用户导入资料，来源与日期由用户填写，尚未核验。'}</strong><p className="mt-1 text-muted">缺失值显示 --；计算仅使用符合日期、币种及口径要求的已填字段。</p>{mode === 'market' && <p className="mt-1 text-muted">{category.id === 'hk' ? '港股价格为港元，报价可能延迟；港股行情独立于内地 A 股，不代表已开通港股交易权限。' : category.id === 'ah' ? 'A 价为人民币，H 价为港元；比价需要同日有效报价与有日期的港元兑人民币汇率，不能直接相除。' : category.id === 'qdii' ? '只收录有交易所资格依据的跨境回转候选；跨境不全是 QDII。行情、资格目录、净值和申赎状态分别核验。' : category.id === 'dividends' ? '按披露事件展示，每股股息不等于过去一年股息；未取得完整期间数据时不计算股息率。' : category.id === 'ipo' ? '申购日期、上市日期与发行价分别展示；未披露发行价或申购额度保持未知，过期申购不视为可申购。' : '行情快照与事件、净值、交易资格来自不同数据能力，不能互相替代。'}</p>}
     </div>
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{[
       ['当前研究', category.label, category.description],
-      [mode === 'demo' ? '虚构样本' : mode === 'market' ? '市场标的' : '本类别导入', snapshot.data ? `${snapshot.data.rows.length} 条` : '--', mode === 'demo' ? '与用户资料分开保存偏好' : mode === 'market' ? '独立于用户导入资料' : '可导入并替换本类别清单'],
-      ['数据能力', category.live_status === 'available' ? '可获取行情' : '待接入专用数据', '实际来源及失败回退以查询结果为准'],
+      [mode === 'demo' ? '虚构样本' : mode === 'market' ? '网络记录' : '本类别导入', snapshot.data ? `${snapshot.data.rows.length} 条` : '--', mode === 'demo' ? '与用户资料分开保存偏好' : mode === 'market' ? '独立于用户导入资料' : '可导入并替换本类别清单'],
+      ['数据能力', category.live_status === 'available' ? '可获取网络数据' : '待接入专用数据', '实际来源及失败回退以查询结果为准'],
     ].map(([label, value, help], index) => <div key={label} className={cn('rounded-card border border-border bg-surface p-4', index === 2 && 'col-span-2 sm:col-span-1')}><p className="text-[11px] text-muted">{label}</p><p className="mt-2 text-lg font-semibold">{value}</p><p className="mt-1 text-[10px] text-muted">{help}</p></div>)}</div>
     <section className="overflow-hidden rounded-card border border-border bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4"><div><h2 className="text-sm font-semibold">{category.label} · 研究清单</h2><p className="mt-1 text-[10px] text-muted">价格保留原币种；每行显示资料基准日和来源。{snapshot.data?.updated_at ? ` 最近保存：${snapshot.data.updated_at}` : ''}</p></div><div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4"><div><h2 className="text-sm font-semibold">{category.label} · 研究清单</h2><p className="mt-1 text-[10px] text-muted">价格保留原币种；每行显示资料基准日和来源。{snapshot.data?.updated_at ? ` 最近成功取数/保存：${snapshot.data.updated_at}` : ''}</p></div><div className="flex flex-wrap gap-2">
         <button type="button" className={BUTTON} disabled={snapshot.isFetching || refreshing} onClick={() => void refreshMarket()}><RefreshCw className={cn('h-3.5 w-3.5', snapshot.isFetching && 'animate-spin')} />{mode === 'market' ? (refreshing ? '正在刷新…' : '刷新行情') : '重新读取'}</button>
         {!previewOnly && mode === 'imported' && <><button type="button" className={BUTTON} disabled={downloading || !snapshot.data?.rows.length || snapshot.isError} onClick={() => void download('export')}><Download className="h-3.5 w-3.5" />导出本类别</button><button type="button" className={PRIMARY_BUTTON} disabled={!canImport} onClick={() => { setSaved(''); setShowImport(value => !value) }}><FileUp className="h-3.5 w-3.5" />导入 CSV</button></>}
       </div></div>

@@ -155,7 +155,7 @@ def check_live_api(base: str) -> dict:
     result = {'convertibles': {'rows': len(bonds['items']), 'as_of': bonds['as_of'],
                               'with_double_low': computed}, 'markets': {}}
     print(f'Installed live convertibles: {len(bonds["items"])} rows, {computed} with double-low', flush=True)
-    for category in ('etf', 'lof', 'cash', 'reits', 'indices', 'bonds'):
+    for category in ('etf', 'lof', 'cash', 'reits', 'indices', 'bonds', 'hk'):
         print(f'Checking installed live market: {category}', flush=True)
         data = json_request(base, f'/api/multi-asset/snapshot?category={category}&mode=market&force=true', timeout=180)
         require(len(data['rows']) >= (2 if category == 'cash' else 6), f'{category} market feed is empty')
@@ -166,6 +166,44 @@ def check_live_api(base: str) -> dict:
                 f'{category} fallback order was not recorded')
         result['markets'][category] = {'rows': len(data['rows']), 'attempts': data['attempts']}
         print(f'Installed live market {category}: {len(data["rows"])} rows', flush=True)
+        if category == 'hk':
+            require(all(row['currency'] == 'HKD' and row['code'].endswith('.HK')
+                        for row in data['rows']), 'HK quote currency/code is invalid')
+    for category in ('dividends', 'ipo', 'ah', 'qdii'):
+        print(f'Checking installed event/qualification dataset: {category}', flush=True)
+        data = json_request(base, f'/api/multi-asset/snapshot?category={category}&mode=market&force=true', timeout=240)
+        require(bool(data['rows']) and data['data_status'] == 'market', f'{category} dataset is empty')
+        require(all(row['data_status'] == 'market' and row.get('source_url') and row.get('as_of')
+                    for row in data['rows']), f'{category} dataset provenance is incomplete')
+        require(all(not row['code'].startswith('DEMO') for row in data['rows']), f'{category} uses demo records')
+        if category == 'dividends':
+            require(any(row.get('dividend_per_share') is not None for row in data['rows']), 'Cash dividends missing')
+            require(all(row['metrics']['dividend_yield_pct'] is None for row in data['rows']),
+                    'Incomplete dividend history was represented as a period yield')
+        elif category == 'ipo':
+            require(all(row.get('event_date') and row.get('subscription_status') for row in data['rows']),
+                    'IPO application dates/status missing')
+        elif category == 'ah':
+            require(any(row.get('price') and row.get('h_price') for row in data['rows']), 'A/H quote legs missing')
+            for row in data['rows']:
+                premium = row['metrics']['ah_premium_pct']
+                if premium is not None:
+                    require(row['as_of'] == row['price_as_of'] == row['h_price_as_of'] == row['fx_as_of'],
+                            'A/H comparison used incompatible source dates')
+                    expected = (row['price'] / (row['h_price'] * row['fx_hkd_cny']) - 1) * 100
+                    require(abs(expected - premium) < 1e-8, 'A/H FX direction/formula is invalid')
+        elif category == 'qdii':
+            require(all(row.get('price') and row.get('quote_at') for row in data['rows']), 'QDII quotes/time missing')
+            require(all(row.get('eligibility_source_url') and row.get('eligibility_as_of')
+                        and row.get('eligibility_status') in {'exchange_listed', 'snapshot_pending_verification'}
+                        for row in data['rows']), 'QDII qualification provenance is missing')
+        result['markets'][category] = {
+            'rows': len(data['rows']), 'attempts': data['attempts'], 'warnings': data['warnings'],
+            'computed_comparisons': sum(row['metrics']['ah_premium_pct'] is not None for row in data['rows']),
+            'first': {key: value for key, value in data['rows'][0].items()
+                      if key not in {'metrics', 'warnings'}},
+        }
+        print(f'Installed dataset {category}: {len(data["rows"])} rows', flush=True)
     fund = '510300.SH'
     profile = json_request(base, f'/api/ext/funds/{fund}/profile', timeout=180)
     nav = json_request(base, f'/api/ext/funds/{fund}/nav?range=year', timeout=180)
