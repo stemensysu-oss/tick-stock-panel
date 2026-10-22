@@ -2357,6 +2357,8 @@ export interface FundProfileResponse extends FundResponse {
     manager_name: string | null
     established_date: string | null
     unit_nav: number | null
+    fund_type?: string | null
+    series_kind?: 'nav' | 'money' | 'unknown'
   } | null
 }
 
@@ -2365,14 +2367,20 @@ export interface FundNavItem {
   unit_nav: number | null
   /** 复权净值，不是累计净值。 */
   adj_nav: number | null
+  cumulative_nav?: number | null
+  income_per_10000?: number | null
+  seven_day_yield_pct?: number | null
 }
 
 export interface FundNavResponse extends FundResponse {
   range: FundNavRange
+  series_kind?: 'nav' | 'money' | 'unknown'
   items: FundNavItem[]
 }
 
 export interface FundHoldingsResponse extends FundResponse {
+  scope?: string
+  report_date?: string | null
   items: {
     ticker: string
     name: string | null
@@ -2385,6 +2393,34 @@ export interface FundHoldingsResponse extends FundResponse {
   stock_ratio_pct: number | null
   bond_ratio_pct: number | null
   fund_ratio_pct: number | null
+}
+
+export interface FundLimit { status: 'finite' | 'unlimited' | 'unknown'; value: number | null; unit: 'CNY' | 'units'; source_text: string | null }
+export interface FundTradingResponse extends FundResponse {
+  subscription_status: string | null
+  redemption_status: string | null
+  minimum_purchase: FundLimit
+  daily_purchase_limit: FundLimit
+  minimum_redemption: FundLimit
+  minimum_remaining: FundLimit
+  source_url: string
+  effective_date: string | null
+}
+export interface FundDividendsResponse extends FundResponse {
+  items: { per_ten_cash_before_tax: number | null; registration_date: string | null; ex_dividend_date: string | null; payment_date: string | null; publish_date: string | null; progress: string | null }[]
+}
+export interface ConvertibleDisclosures {
+  code: string; name: string; provider: string; fetched_at: string; source_url: string
+  attempts: { provider: string; status: string }[]; warnings: string[]
+  lifecycle: 'listed' | 'terminated' | 'not_yet_listed' | 'unknown'
+  listing_date: string | null; delisting_date: string | null; source_end_date: string | null
+  interest_start_date: string | null; conversion_start_date: string | null; conversion_end_date: string | null
+  reference_conversion_price: number | null; par_value: number | null; rating: string | null; rating_agency: string | null
+  coupon_text: string | null; call_clause_text: string | null; put_clause_text: string | null
+  call_state: 'implementation_disclosed' | 'historical_implementation' | 'unknown'
+  call_notice_date: string | null; call_record_date: string | null; call_execution_date: string | null; call_price: number | null
+  put_notice_date: string | null; put_execution_start: string | null; put_execution_end: string | null; put_price: number | null
+  events: { type: string; start_date: string | null; end_date: string | null }[]
 }
 
 export interface ConvertibleCashFlow { date: string; amount: number }
@@ -2612,8 +2648,11 @@ export const api = {
     request<FundProfileResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/profile`, { quiet: true, timeoutMs: 120_000 }),
   fundNav: (ticker: string, range: FundNavRange) =>
     request<FundNavResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/nav?range=${range}`, { quiet: true, timeoutMs: 120_000 }),
-  fundHoldings: (ticker: string) =>
-    request<FundHoldingsResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/holdings`, { quiet: true, timeoutMs: 120_000 }),
+  fundHoldings: (ticker: string, assetType?: 'stock' | 'bond', reportDate?: string) =>
+    request<FundHoldingsResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/holdings${assetType ? `?asset_type=${assetType}${reportDate ? `&report_date=${encodeURIComponent(reportDate)}` : ''}` : ''}`, { quiet: true, timeoutMs: 120_000 }),
+  fundTrading: (ticker: string) => request<FundTradingResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/trading`, { quiet: true, timeoutMs: 120_000 }),
+  fundDividends: (ticker: string) => request<FundDividendsResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/dividends`, { quiet: true, timeoutMs: 120_000 }),
+  convertibleDisclosures: (code: string) => request<ConvertibleDisclosures>(`/api/ext/convertibles/${encodeURIComponent(code)}/disclosures`, { quiet: true, timeoutMs: 60_000 }),
   convertibles: () => request<ConvertibleDataset>('/api/ext/convertibles', { quiet: true }),
   convertibleSourceStatus: () => request<ConvertibleSourceStatus>('/api/ext/convertibles/status', { quiet: true }),
   previewConvertibleRestore: (input: { snapshot: ConvertibleDataset }) =>

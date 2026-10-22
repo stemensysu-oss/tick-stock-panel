@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChartNoAxesCombined, Database, Info, Loader2, RefreshCw, Search } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
@@ -8,7 +8,8 @@ import { ErrorState } from '@/components/ErrorState'
 import { api, type FundNavRange } from '@/lib/api'
 import { QK } from '@/lib/queryKeys'
 import { cn } from '@/lib/cn'
-import { FundNavChart } from './FundNavChart'
+import { FundDisclosures } from './FundDisclosures'
+import { FundNavChart, FUND_SERIES } from './FundNavChart'
 import { SourceTrail } from '../SourceTrail'
 
 const RANGES: { value: FundNavRange; label: string }[] = [
@@ -37,14 +38,18 @@ export function FundsPage() {
   const [ticker, setTicker] = useState('510300.SH')
   const [inputError, setInputError] = useState('')
   const [range, setRange] = useState<FundNavRange>('year')
-  const [navField, setNavField] = useState<'unit_nav' | 'adj_nav'>('unit_nav')
+  const [navField, setNavField] = useState<'unit_nav' | 'adj_nav' | 'cumulative_nav'>('unit_nav')
+  const [moneyField, setMoneyField] = useState<'income_per_10000' | 'seven_day_yield_pct'>('income_per_10000')
+  const [holdingAsset, setHoldingAsset] = useState<'stock' | 'bond'>('stock')
+  const [holdingPeriod, setHoldingPeriod] = useState('')
+  const queryClient = useQueryClient()
   const status = useQuery({ queryKey: QK.fundResearchStatus, queryFn: api.fundResearchStatus, staleTime: 30_000, retry: false })
   const enabled = !!ticker && status.data?.configured === true
   const profile = useQuery({ queryKey: QK.fundProfile(ticker), queryFn: () => api.fundProfile(ticker), enabled, staleTime: 300_000, retry: false })
   const nav = useQuery({ queryKey: QK.fundNav(ticker, range), queryFn: () => api.fundNav(ticker, range), enabled, staleTime: 300_000, retry: false })
-  const holdings = useQuery({ queryKey: QK.fundHoldings(ticker), queryFn: () => api.fundHoldings(ticker), enabled, staleTime: 300_000, retry: false })
+  const holdings = useQuery({ queryKey: QK.fundHoldings(ticker, holdingAsset, holdingPeriod), queryFn: () => api.fundHoldings(ticker, holdingAsset, holdingPeriod), enabled, staleTime: 300_000, retry: false })
   const refreshing = profile.isFetching || nav.isFetching || holdings.isFetching
-  const refresh = () => { void profile.refetch(); void nav.refetch(); void holdings.refetch() }
+  const refresh = () => { void queryClient.invalidateQueries({ queryKey: ['fund-research'] }) }
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -56,15 +61,17 @@ export function FundsPage() {
     setInputError('')
     setInput(next)
     if (next === ticker) refresh()
-    else setTicker(next)
+    else { setTicker(next); setHoldingPeriod('') }
   }
   const points = nav.data?.items ?? []
-  const lastPoint = points.findLast(point => point[navField] !== null)
+  const money = nav.data?.series_kind === 'money'
+  const field = money ? moneyField : navField
+  const lastPoint = points.findLast(point => point[field] != null)
   const fund = profile.data?.profile
 
   return (
     <div className="min-w-0">
-      <PageHeader title="基金研究" subtitle="基金资料 · 历史净值 · 定期披露持仓" right={<span className="shrink-0 rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-medium text-accent">基金 / ETF / LOF</span>} />
+      <PageHeader title="基金研究" subtitle="净值与货币收益 · 申赎限额 · 分红 · 股票与债券持仓" right={<span className="shrink-0 rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-medium text-accent">基金 / ETF / LOF</span>} />
       <div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
         <section className="rounded-card border border-border bg-surface p-4 sm:p-5">
           <form onSubmit={submit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -101,24 +108,31 @@ export function FundsPage() {
             </div>
             {profile.isPending ? <Loading text="正在读取基金资料…" /> : profile.isError ? <ErrorState title="基金资料读取失败" hint={profile.error.message} onRetry={() => void profile.refetch()} retrying={profile.isFetching} /> : !fund ? <EmptyState title="暂无基金资料" hint="数据源未返回这只基金的资料；其他数据会独立显示。" /> : <dl className="grid grid-cols-2 gap-5 p-4 sm:grid-cols-4 sm:p-5">{[
               ['基金经理', fund.manager_name || '—'], ['基金管理人', fund.mgmt_name || '—'],
-              ['成立日期', fund.established_date || '—'], ['资料中的单位净值', number(fund.unit_nav)],
+              ['成立日期', fund.established_date || '—'], ['基金类型', fund.fund_type || '未提供'],
             ].map(([label, value]) => <div key={label}><dt className="text-[11px] text-muted">{label}</dt><dd className="mt-2 break-words text-sm font-medium text-foreground">{value}</dd></div>)}</dl>}
             <SourceTrail data={profile.data} />
           </section>
 
-          <section aria-label="净值走势" className="rounded-card border border-border bg-surface">
+          <section aria-label={money ? "货币基金收益" : "净值走势"} className="rounded-card border border-border bg-surface">
             <div className="flex flex-wrap items-center justify-between gap-4 px-4 pt-4 sm:px-5">
-              <div><h2 className="text-sm font-semibold">净值走势</h2><p className="mt-1 text-[11px] text-muted">{lastPoint ? `所选区间最近净值日 ${lastPoint.date} · ${number(lastPoint[navField])}` : '以数据源公布的净值日期为准'}</p></div>
-              <div className="flex rounded-btn bg-elevated/70 p-1">{(['unit_nav', 'adj_nav'] as const).map(field => <button key={field} type="button" onClick={() => setNavField(field)} aria-pressed={navField === field} className={cn('rounded px-3 py-1.5 text-xs transition-colors', navField === field ? 'bg-accent/15 text-accent' : 'text-muted hover:text-foreground')}>{field === 'unit_nav' ? '单位净值' : '复权净值'}</button>)}</div>
+              <div><h2 className="text-sm font-semibold">{money ? "货币基金收益" : "净值走势"}</h2><p className="mt-1 text-[11px] text-muted">{lastPoint ? `最近公布日 ${lastPoint.date} · ${FUND_SERIES[field]} ${number(lastPoint[field])}` : '以数据源公布的净值日期为准'}</p></div>
+              <div className="flex flex-wrap rounded-btn bg-elevated/70 p-1">{(money ? (['income_per_10000', 'seven_day_yield_pct'] as const) : (['unit_nav', 'cumulative_nav', 'adj_nav'] as const)).map(value => <button key={value} type="button" onClick={() => { if (value === 'income_per_10000' || value === 'seven_day_yield_pct') setMoneyField(value); else setNavField(value) }} aria-pressed={field === value} className={cn('rounded px-3 py-1.5 text-xs transition-colors', field === value ? 'bg-accent/15 text-accent' : 'text-muted hover:text-foreground')}>{FUND_SERIES[value]}</button>)}</div>
             </div>
             <div className="flex flex-wrap gap-1 px-4 pt-4 sm:px-5">{RANGES.map(option => <button type="button" key={option.value} aria-pressed={range === option.value} onClick={() => setRange(option.value)} className={cn('rounded-btn px-2.5 py-1.5 text-[11px]', range === option.value ? 'bg-accent/10 font-medium text-accent' : 'text-muted hover:bg-elevated hover:text-secondary')}>{option.label}</button>)}</div>
-            {nav.isPending ? <Loading text="正在读取历史净值…" /> : nav.isError ? <ErrorState title="历史净值读取失败" hint={nav.error.message} onRetry={() => void nav.refetch()} retrying={nav.isFetching} /> : !lastPoint ? <EmptyState title="所选区间暂无该口径净值" hint="可尝试其他区间，或切换单位净值 / 复权净值。缺失值不会填成零。" /> : <FundNavChart items={points} field={navField} />}
-            <p className="flex gap-2 border-t border-border px-4 py-3 text-[11px] leading-relaxed text-muted sm:px-5"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />净值沿用数据源币种，未做汇率换算。单位净值变化会受分红、份额折算等影响，不等同投资总回报。复权净值沿用数据源口径，不是累计净值。</p>
+            {nav.isPending ? <Loading text="正在读取历史净值…" /> : nav.isError ? <ErrorState title="历史净值读取失败" hint={nav.error.message} onRetry={() => void nav.refetch()} retrying={nav.isFetching} /> : !lastPoint ? <EmptyState title="所选区间暂无该口径净值" hint="可尝试其他区间，或切换单位净值 / 复权净值。缺失值不会填成零。" /> : <FundNavChart items={points} field={field} />}
+            <p className="flex gap-2 border-t border-border px-4 py-3 text-[11px] leading-relaxed text-muted sm:px-5"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />{money ? "万份收益为每万份基金当日收益（元），七日年化为源公布的年化百分比；两者均不是基金净值，七日年化不是未来收益承诺。" : "净值沿用源币种；单位、累计、复权净值分别展示，单位净值变化不等同含分红再投资的总回报。"}</p>
             <SourceTrail data={nav.data} />
           </section>
 
+          <FundDisclosures key={ticker} ticker={ticker} />
+
           <section aria-label="披露持仓" className="overflow-hidden rounded-card border border-border bg-surface">
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5"><div><h2 className="text-sm font-semibold">披露持仓</h2><p className="mt-1 text-[11px] text-muted">持仓来自定期披露，请同时核对报告期与公告日。</p></div>{holdings.data && <div className="flex flex-wrap gap-3 text-[11px] text-secondary"><span>股票 {percent(holdings.data.stock_ratio_pct)}</span><span>债券 {percent(holdings.data.bond_ratio_pct)}</span><span>基金 {percent(holdings.data.fund_ratio_pct)}</span></div>}</div>
+            <div className="flex flex-wrap items-center gap-3 px-4 pb-4">
+              <label className="text-xs">持仓类型 <select aria-label="持仓类型" value={holdingAsset} onChange={e => setHoldingAsset(e.target.value as 'stock' | 'bond')} className="ml-2 rounded border border-border bg-base px-3 py-2"><option value="stock">股票持仓</option><option value="bond">债券持仓</option></select></label>
+              <label className="text-xs">报告期 <select aria-label="持仓报告期" value={holdingPeriod} onChange={e => setHoldingPeriod(e.target.value)} className="ml-2 rounded border border-border bg-base px-3 py-2"><option value="">最近披露</option>{Array.from({ length: 12 }, (_, i) => { const now = new Date(); const quarter = Math.floor(now.getMonth() / 3) - 1 - i; const year = now.getFullYear() + Math.floor(quarter / 4); const q = ((quarter % 4) + 4) % 4; const date = `${year}-${['03-31', '06-30', '09-30', '12-31'][q]}`; return <option key={date} value={date}>{date}</option> })}</select></label>
+              <span className="text-[11px] text-muted">仅源披露子集，不保证完整；历史报告可有披露延迟。</span>
+            </div>
             {holdings.isPending ? <Loading text="正在读取披露持仓…" /> : holdings.isError ? <ErrorState title="持仓读取失败" hint={holdings.error.message} onRetry={() => void holdings.refetch()} retrying={holdings.isFetching} /> : !holdings.data?.items.length ? <EmptyState title="暂无已披露持仓" hint="数据源未返回持仓记录。这不代表基金当前没有持仓。" /> : <div className="overflow-x-auto"><table className="w-full min-w-[660px] text-left text-xs"><caption className="sr-only">{ticker} 披露持仓；占净值比重为百分数</caption><thead className="border-y border-border bg-elevated/40 text-[11px] text-muted"><tr>{['资产', '类型', '占净值比重', '报告期', '公告日'].map(label => <th key={label} className="px-4 py-2.5 font-medium">{label}</th>)}</tr></thead><tbody className="divide-y divide-border/60">{holdings.data.items.map((item, index) => <tr key={`${item.asset_type}-${item.ticker}-${item.report_date}-${index}`} className="hover:bg-elevated/30"><td className="px-4 py-3"><div className="font-medium text-foreground">{item.name || '未提供名称'}</div><div className="mt-1 font-mono text-[10px] text-muted">{item.ticker}</div></td><td className="px-4 py-3 text-secondary">{ASSET_LABELS[item.asset_type] || item.asset_type}</td><td className="px-4 py-3 font-mono tabular-nums">{percent(item.weight_pct)}</td><td className="px-4 py-3 font-mono text-secondary">{item.report_date || '—'}</td><td className="px-4 py-3 font-mono text-secondary">{item.publish_date || '—'}</td></tr>)}</tbody></table></div>}
             <SourceTrail data={holdings.data} />
           </section>

@@ -18,6 +18,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.custom.funds.models import (
+    FundDividend,
+    FundDividendsResponse,
     FundHolding,
     FundHoldingsResponse,
     FundNavPoint,
@@ -109,6 +111,48 @@ class FuyaoFundClient(FuyaoClient):
 
 
 class FuyaoFundProvider:
+    def trading(self, ticker):
+        # Profile trade_rule has no documented generic limit schema. QDII quota
+        # is a different capability and must not be guessed into trading limits.
+        raise NotImplementedError
+
+    def dividends(self, ticker):
+        data = self._request('/api/fund/corporate-actions/dividends', {'thscode': ticker})
+        items = [FundDividend(
+            per_ten_cash_before_tax=_number(row.get('per_ten_cash_before_tax'), nonnegative=True),
+            registration_date=_date(row.get('registration_date_ms')),
+            ex_dividend_date=_date(row.get('ex_dividend_date_ms')),
+            payment_date=_date(row.get('payment_date_ms')),
+            publish_date=_date(row.get('publish_date_ms')), progress=_text(row.get('progress')),
+        ) for row in _rows(data)]
+        return FundDividendsResponse(ticker=ticker, provider='fuyao',
+            timestamp_ms=_timestamp(data.get('timestamp')), items=items,
+            warnings=['现金分红单位为每10份；未据此拼接复权收益。'])
+
+    def holdings_history(self, ticker, asset_type, report_date=None):
+        if asset_type == 'stock' and not report_date:
+            return self.holdings(ticker)
+        if not report_date:
+            data = self._request(f'/api/fund/portfolio/{asset_type}-report-dates',
+                {'thscode': ticker, 'report_type': 'quarter'})
+            dates = [value for row in _rows(data) if (value := _date(row.get('end_date_ms')))]
+            if not dates:
+                return FundHoldingsResponse(ticker=ticker, provider='fuyao')
+            report_date = max(dates)
+        data = self._request(f'/api/fund/portfolio/{asset_type}-history',
+            {'thscode': ticker, 'report_type': 'quarter', 'end_date': report_date})
+        items = []
+        for row in _rows(data):
+            code, period = _text(row.get('thscode')), _date(row.get('end_date_ms'))
+            if not code or period != report_date or row.get('asset_type') != asset_type:
+                raise _malformed()
+            items.append(FundHolding(ticker=code, name=_text(row.get('name')), asset_type=asset_type,
+                weight_pct=_number(row.get('hold_ratio')), report_date=period,
+                publish_date=_date(row.get('publish_date_ms'))))
+        return FundHoldingsResponse(ticker=ticker, provider='fuyao',
+            timestamp_ms=_timestamp(data.get('timestamp')), items=items, report_date=report_date,
+            warnings=['定期披露持仓，不是实时持仓；报告截止日不是公告日，源未提供公告日时保持未知。'])
+
     def __init__(
         self,
         api_key: str,

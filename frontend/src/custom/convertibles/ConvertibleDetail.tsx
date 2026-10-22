@@ -7,9 +7,10 @@ import { cn } from '@/lib/cn'
 import { BUTTON, COLUMNS, INPUT, formatColumn, formatNumber, safeSourceUrl } from './columns'
 import { EVENT_LABELS, PROGRESS_LABELS } from './ConvertibleViews'
 import { CashFlowFields, ClauseFields } from './ResearchFields'
+import { SourcedDisclosures } from './SourcedDisclosures'
 import { buildResearch, createResearchDraft, type ResearchDraft } from './researchForm'
 
-type Tab = 'overview' | 'valuation' | 'clauses' | 'events'
+type Tab = 'overview' | 'valuation' | 'clauses' | 'events' | 'source'
 function timestamp(value: string | null | undefined): string {
   if (!value) return '未提供'
   const date = new Date(value)
@@ -60,6 +61,7 @@ export function ConvertibleDetail({ item, revision, asOf, source, onClose, onSav
     <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border p-4 sm:px-6"><div><p className="font-mono text-[10px] text-muted">{item.code} · {item.asset_type === 'exchangeable' ? '可交换债' : '可转债'}</p><h2 id="convertible-detail-title" className="mt-1 text-lg font-semibold">{item.name}<span className="ml-3 font-mono text-xl text-accent">{formatNumber(item.bond_price, 3)}</span><span className="ml-1 text-xs font-normal text-muted">元</span></h2><p className="mt-1 text-[11px] text-muted">计算数据日 {asOf || '未提供'} · 正股 {item.stock_name || item.stock_code || '未提供'}</p></div><button type="button" aria-label="关闭转债详情" onClick={close} disabled={busy} className="rounded p-2 text-muted hover:bg-elevated disabled:opacity-40"><X className="h-4 w-4" /></button></header>
     <nav aria-label="转债详情栏目" className="flex shrink-0 overflow-x-auto border-b border-border px-4 sm:px-6">{([{ id: 'overview', label: '概览', icon: ShieldCheck }, { id: 'valuation', label: '现金流与估值', icon: Calculator }, { id: 'clauses', label: '条款观察', icon: CheckCircle2 }, { id: 'events', label: '公告', icon: FileText }] as const).map(value => <button type="button" key={value.id} onClick={() => setTab(value.id)} aria-current={tab === value.id ? 'page' : undefined} className={cn('inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-xs', tab === value.id ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-foreground')}><value.icon className="h-3.5 w-3.5" />{value.label}</button>)}</nav>
     <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
+      {tab === 'source' && <SourcedDisclosures code={item.code} />}
       {discard && <div role="alert" className="rounded-card border border-warning/30 bg-warning/5 p-3 text-xs"><p>有尚未保存的研究资料。关闭会丢弃本次编辑。</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => setDiscard(false)} className={BUTTON}>继续编辑</button><button type="button" onClick={onClose} className={`${BUTTON} text-danger`}>放弃修改并关闭</button></div></div>}
       {(stale || conflict) && <p role="alert" className="rounded-card border border-warning/30 bg-warning/5 p-3 text-xs leading-relaxed text-warning">研究清单已更新。为避免覆盖别的修改，请保留需要的编辑内容，关闭详情后重新打开再保存。</p>}
       {tab === 'overview' && <>

@@ -220,7 +220,7 @@ def test_api_success_empty_validation_and_source_error(monkeypatch: pytest.Monke
     assert client.get("/api/ext/funds/025480.OF/profile").json()["profile"] is None
     assert client.get("/api/ext/funds/025480.OF/nav?range=month").json() == {
         "ticker": "025480.OF", "provider": "fuyao", "timestamp_ms": None,
-        "range": "month", "items": [], "warnings": [], "attempts": [],
+        "range": "month", "items": [], "warnings": [], "attempts": [], "series_kind": "nav",
     }
     assert client.get("/api/ext/funds/510300/nav").status_code == 422
     assert client.get("/api/ext/funds/510300.SH/nav?range=decade").status_code == 422

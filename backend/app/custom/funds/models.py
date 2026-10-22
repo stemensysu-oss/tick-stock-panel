@@ -32,6 +32,8 @@ class FundProfile(BaseModel):
     manager_name: str | None = None
     established_date: str | None = None
     unit_nav: float | None = None
+    fund_type: str | None = None
+    series_kind: Literal['nav', 'money', 'unknown'] = 'unknown'
 
 
 class FundProfileResponse(FundSnapshot):
@@ -43,10 +45,14 @@ class FundNavPoint(BaseModel):
     unit_nav: float | None = None
     # Adjusted NAV is distinct from cumulative NAV; never substitute one for the other.
     adj_nav: float | None = None
+    cumulative_nav: float | None = None
+    income_per_10000: float | None = None  # CNY per 10,000 units per day
+    seven_day_yield_pct: float | None = None  # published annualised percentage points
 
 
 class FundNavResponse(FundSnapshot):
     range: NavRange
+    series_kind: Literal['nav', 'money', 'unknown'] = 'nav'
     items: list[FundNavPoint] = Field(default_factory=list)
 
 
@@ -64,3 +70,36 @@ class FundHoldingsResponse(FundSnapshot):
     stock_ratio_pct: float | None = None
     bond_ratio_pct: float | None = None
     fund_ratio_pct: float | None = None
+    scope: str = 'source_disclosed'
+    report_date: str | None = None
+
+
+class FundDividend(BaseModel):
+    per_ten_cash_before_tax: float | None = None
+    registration_date: str | None = None
+    ex_dividend_date: str | None = None
+    payment_date: str | None = None
+    publish_date: str | None = None
+    progress: str | None = None
+
+
+class FundDividendsResponse(FundSnapshot):
+    items: list[FundDividend] = Field(default_factory=list)
+
+
+class FundLimit(BaseModel):
+    status: Literal['finite', 'unlimited', 'unknown'] = 'unknown'
+    value: float | None = None
+    unit: Literal['CNY', 'units']
+    source_text: str | None = None
+
+
+class FundTradingResponse(FundSnapshot):
+    subscription_status: str | None = None
+    redemption_status: str | None = None
+    minimum_purchase: FundLimit = Field(default_factory=lambda: FundLimit(unit='CNY'))
+    daily_purchase_limit: FundLimit = Field(default_factory=lambda: FundLimit(unit='CNY'))
+    minimum_redemption: FundLimit = Field(default_factory=lambda: FundLimit(unit='units'))
+    minimum_remaining: FundLimit = Field(default_factory=lambda: FundLimit(unit='units'))
+    source_url: str
+    effective_date: str | None = None

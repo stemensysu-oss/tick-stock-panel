@@ -114,6 +114,8 @@ class FundHTTP:
 def test_nav_follows_actual_twenty_row_pages_and_never_substitutes_cumulative_nav():
     today = datetime.now(SH).date().isoformat()
     def handler(url, params):
+        if 'jbgk_' in url:
+            return '<table class="info w790"><tr><th>基金代码</th><td>000001</td><th>基金全称</th><td>合成基金</td><th>基金类型</th><td>混合型</td></tr></table>'
         page = params['pageIndex']
         # Synthetic dates are unique and in the requested range.
         from datetime import timedelta
@@ -124,13 +126,13 @@ def test_nav_follows_actual_twenty_row_pages_and_never_substitutes_cumulative_na
     http = FundHTTP(handler)
     result = EastmoneyFundProvider(http).nav('000001.OF', 'month')
     assert len(result.items) == 21
-    assert len(http.calls) == 2
+    assert len(http.calls) == 3  # classification plus two NAV pages
     assert all(point.adj_nav is None for point in result.items)
     assert result.items[-1].date == today
 
 
 def test_partial_nav_pagination_fails_instead_of_silently_truncating():
-    http = FundHTTP(lambda *a: {'ErrCode': 0, 'TotalCount': 21, 'Data': {'LSJZList': []}})
+    http = FundHTTP(lambda url, params: '<table class="info w790"><tr><th>基金代码</th><td>000001</td><th>基金全称</th><td>合成基金</td><th>基金类型</th><td>混合型</td></tr></table>' if 'jbgk_' in url else {'ErrCode': 0, 'TotalCount': 21, 'Data': {'LSJZList': []}})
     with pytest.raises(Exception, match='分页不完整'):
         EastmoneyFundProvider(http).nav('000001.OF', 'month')
 

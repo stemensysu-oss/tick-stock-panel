@@ -292,6 +292,8 @@ def check_live_api(base: str) -> dict:
     result['fund'] = {'ticker': fund, 'nav_rows': len(nav['items']),
                       'last_nav_date': nav['items'][-1]['date'], 'holdings': len(holdings['items']),
                       'report_date': holdings['items'][0]['report_date'], 'source': profile['provider']}
+    from research_enrichment_smoke import check_enrichment
+    result['fund_bond_enrichment'] = check_enrichment(base, json_request, require)
     return result
 
 

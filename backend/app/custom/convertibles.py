@@ -11,6 +11,7 @@ from app.extensions import (
     BackendExtensionRegistrar,
     ExtensionContext,
 )
+from app.services.convertibles_disclosures import ConvertibleDisclosures, disclosures
 from app.services.convertibles_fallback import FallbackConvertibleProvider
 from app.services.convertibles_research import (
     CSV_TEMPLATE,
@@ -97,6 +98,13 @@ QuoteServiceDependency = Annotated[ConvertibleQuoteService, Depends(get_quote_se
 
 def setup(registrar: BackendExtensionRegistrar) -> None:
     router = APIRouter(prefix="/api/ext/convertibles", tags=["convertible-research"])
+
+    @router.get('/{code}/disclosures', response_model=ConvertibleDisclosures)
+    def sourced_disclosures(code: str):
+        try:
+            return disclosures(code)
+        except ConvertibleDataError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from None
 
     @router.get("", response_model=ConvertibleSnapshot)
     def snapshot(service: ServiceDependency) -> ConvertibleSnapshot:

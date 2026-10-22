@@ -11,7 +11,7 @@ name: 桌面客户端发布
 #   - 版本号通过 input 传入, 与 tag 解耦, 更灵活
 #
 # 使用:
-#   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.17 -f platforms=windows
+#   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.18 -f platforms=windows
 #   或 GitHub 网页 Actions → 桌面客户端发布 → Run workflow
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ on:
       version:
         description: '版本号 (必须与 frontend/package.json 一致；个人 fork 仅构建，不发布 Release/tag)'
         required: true
-        default: 'v0.3.17'
+        default: 'v0.3.18'
       platforms:
         description: '要构建的平台 (逗号分隔: windows,macos,linux)'
         required: true
@@ -141,9 +141,14 @@ jobs:
         run: uv run --frozen --no-sync python ../scripts/research_market_live_check.py --category etf
 
       - name: 港股分析契约测试 (真实HTTP路径，模型为测试替身)
-        if: matrix.platform == 'windows'
+        if: matrix.platform == 'windows' || matrix.platform == 'macos'
         working-directory: backend
         run: uv run --frozen --with pytest==9.0.3 --no-sync python -m pytest tests/test_hk_stock_analysis.py tests/test_stock_analysis_beijing_today.py tests/test_stock_analyzer_index.py -q
+
+      - name: 基金收益、披露及转债条款契约测试
+        if: matrix.platform == 'windows' || matrix.platform == 'macos'
+        working-directory: backend
+        run: uv run --frozen --with pytest==9.0.3 --no-sync python -m pytest tests/test_fund_enrichment.py tests/test_convertibles_disclosures.py tests/test_custom_funds.py tests/test_research_fallback.py -q
 
       - name: 安装 PyInstaller
         # 必须装进 backend 的 uv 环境 (pywebview/polars 等依赖都在那里),
@@ -174,7 +179,14 @@ jobs:
         shell: bash
         run: |
           APP_VER=$(node -p "require('./frontend/package.json').version")
-          uv run --no-project python scripts/generate_manifest.py --root backend/dist/TSP/_internal --output backend/dist/TSP/_internal/app/upgrade_manifest.json --version "$APP_VER"
+          RESOURCE_ROOT=backend/dist/TSP/_internal
+          if [ "${{ matrix.platform }}" = macos ]; then
+            RESOURCE_ROOT=backend/dist/TSP.app/Contents/Frameworks
+          fi
+          uv run --no-project python scripts/generate_manifest.py --root "$RESOURCE_ROOT" --output "$RESOURCE_ROOT/app/upgrade_manifest.json" --version "$APP_VER"
+          if [ "${{ matrix.platform }}" = macos ]; then
+            codesign --force --deep --sign - backend/dist/TSP.app
+          fi
 
       - name: 检查 Polars 兼容内核 (仅 Windows)
         if: matrix.platform == 'windows'
@@ -262,6 +274,20 @@ jobs:
           cd backend/dist
           tar -czf ../../${{ matrix.artifact }} TSP
 
+      - name: 验证 Mac DMG、真实窗口、联网数据与替换升级
+        if: matrix.platform == 'macos'
+        working-directory: backend
+        run: uv run --frozen --no-sync python ../packaging/macos_installer_smoke.py --installer "../$INSTALLER_FILE" --version "$BUILD_VERSION" --logs "$RUNNER_TEMP/tsp-mac-smoke-logs"
+
+      - name: 保留 Mac 安装验证日志
+        if: always() && matrix.platform == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-smoke-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tsp-mac-smoke-logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: 生成安装包校验值和源提交记录
         working-directory: backend
         shell: bash
@@ -271,6 +297,8 @@ jobs:
           extra=()
           if [ "$TARGET_PLATFORM" = windows ]; then
             extra=(--smoke-report "$RUNNER_TEMP/tsp-smoke-logs/smoke-result.json")
+          elif [ "$TARGET_PLATFORM" = macos ]; then
+            extra=(--smoke-report "$RUNNER_TEMP/tsp-mac-smoke-logs/smoke-result.json")
           fi
           uv run --frozen --no-sync python ../packaging/write_build_record.py \
             --artifact "../$INSTALLER_FILE" --version "$BUILD_VERSION" \

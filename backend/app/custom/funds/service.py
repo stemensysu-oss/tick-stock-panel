@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Protocol
 
 from app.custom.funds.models import (
@@ -56,5 +57,23 @@ class FundResearchService:
             raise FundDataError(422, "净值区间不受支持，请选择一周至五年的预设区间")
         return self._provider.nav(ticker, nav_range)
 
-    def holdings(self, ticker: str) -> FundHoldingsResponse:
-        return self._provider.holdings(_validate_ticker(ticker))
+    def holdings(self, ticker: str, asset_type=None, report_date=None) -> FundHoldingsResponse:
+        ticker = _validate_ticker(ticker)
+        if report_date:
+            try:
+                parsed = date.fromisoformat(report_date)
+                if parsed.isoformat() != report_date or parsed.month not in {3, 6, 9, 12} or parsed.day != (30 if parsed.month in {6, 9} else 31):
+                    raise ValueError
+            except ValueError:
+                raise FundDataError(422, '持仓报告期须为 YYYY-MM-DD 格式的季末日期') from None
+        if asset_type is None and report_date is None:
+            return self._provider.holdings(ticker)
+        if asset_type not in {'stock', 'bond'}:
+            raise FundDataError(422, '持仓类型须为股票或债券')
+        return self._provider.holdings_history(ticker, asset_type, report_date)
+
+    def dividends(self, ticker):
+        return self._provider.dividends(_validate_ticker(ticker))
+
+    def trading(self, ticker):
+        return self._provider.trading(_validate_ticker(ticker))

@@ -39,12 +39,12 @@ def main() -> None:
     if not re.fullmatch(r"[0-9a-f]{40}", commit) or commit != os.environ["GITHUB_SHA"]:
         raise SystemExit("Checked-out source does not match this Actions run")
     smoke = None
-    if args.platform == "windows":
+    if args.platform in {'windows', 'macos'}:
         if args.smoke_report is None:
-            raise SystemExit("A passing Windows installer smoke report is required")
+            raise SystemExit("A passing installer smoke report is required")
         smoke = json.loads(args.smoke_report.read_text(encoding="utf-8"))
         if smoke.get("status") != "passed" or smoke.get("version") != args.version:
-            raise SystemExit("Windows installer verification did not pass")
+            raise SystemExit("Installer verification did not pass")
     checksum = file_sha256(artifact)
     if smoke is not None and smoke.get("installer_sha256") != checksum:
         raise SystemExit("The verified installer differs from the artifact")

@@ -4,9 +4,10 @@ import type { FundNavItem } from '@/lib/api'
 import { useChartTheme } from '@/lib/theme'
 import { useECharts } from '@/pages/backtest/charts/useECharts'
 
-export function FundNavChart({ items, field }: { items: FundNavItem[]; field: 'unit_nav' | 'adj_nav' }) {
+export const FUND_SERIES = { unit_nav: '单位净值', adj_nav: '复权净值', cumulative_nav: '累计净值', income_per_10000: '万份收益（元/万份）', seven_day_yield_pct: '七日年化（%）' }
+export function FundNavChart({ items, field }: { items: FundNavItem[]; field: keyof typeof FUND_SERIES }) {
   const theme = useChartTheme()
-  const name = field === 'unit_nav' ? '单位净值' : '复权净值'
+  const name = FUND_SERIES[field]
   const option = useMemo<EChartsOption>(() => ({
     animation: false,
     grid: { left: 60, right: 20, top: 20, bottom: 48 },
@@ -25,7 +26,7 @@ export function FundNavChart({ items, field }: { items: FundNavItem[]; field: 'u
       splitLine: { lineStyle: { color: theme.grid } },
     },
     series: [{
-      name, type: 'line', data: items.map(item => item[field]),
+      name, type: 'line', data: items.map(item => item[field] ?? null),
       // 稀疏数据的孤立点始终可见；密集数据交给图表控密度，缺值两侧不连线。
       showSymbol: true, showAllSymbol: items.filter(item => item[field] !== null).length <= 32 ? true : 'auto',
       symbolSize: 4, connectNulls: false,
@@ -34,5 +35,5 @@ export function FundNavChart({ items, field }: { items: FundNavItem[]; field: 'u
     }],
   }), [items, field, name, theme])
   const chartRef = useECharts(option)
-  return <div ref={chartRef} role="img" aria-label={`${name}走势图，横轴为净值日期，纵轴为净值（源币种）`} className="h-72 w-full sm:h-80" />
+  return <div ref={chartRef} role="img" aria-label={`${name}走势图，横轴为公布日期，纵轴为${name}`} className="h-72 w-full sm:h-80" />
 }
