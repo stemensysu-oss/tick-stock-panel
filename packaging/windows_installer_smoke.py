@@ -118,10 +118,14 @@ def json_request(base: str, route: str, *, body=None, timeout=3) -> dict:
     opener = build_opener(ProxyHandler({}))
     request = Request(base + route, data=json.dumps(body).encode() if body is not None else None,
                       headers={'Content-Type': 'application/json'})
-    with opener.open(request, timeout=timeout) as response:
-        require(response.status == 200, f"{route}: expected HTTP 200")
-        require(response.headers.get_content_type() == "application/json", f"{route}: not JSON (possibly SPA fallback)")
-        result = json.load(response)
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            require(response.status == 200, f"{route}: expected HTTP 200")
+            require(response.headers.get_content_type() == "application/json", f"{route}: not JSON (possibly SPA fallback)")
+            result = json.load(response)
+    except HTTPError as exc:
+        detail = exc.read(2048).decode('utf-8', errors='replace')
+        raise RuntimeError(f'{route}: HTTP {exc.code}; {detail}') from None
     require(isinstance(result, dict), f"{route}: expected a JSON object")
     return result
 
@@ -150,7 +154,9 @@ def check_live_api(base: str) -> dict:
     require(computed > 100, 'Convertible stock bindings/prices or reference conversion prices are missing')
     result = {'convertibles': {'rows': len(bonds['items']), 'as_of': bonds['as_of'],
                               'with_double_low': computed}, 'markets': {}}
+    print(f'Installed live convertibles: {len(bonds["items"])} rows, {computed} with double-low', flush=True)
     for category in ('etf', 'lof', 'cash', 'reits', 'indices', 'bonds'):
+        print(f'Checking installed live market: {category}', flush=True)
         data = json_request(base, f'/api/multi-asset/snapshot?category={category}&mode=market&force=true', timeout=180)
         require(len(data['rows']) >= (2 if category == 'cash' else 6), f'{category} market feed is empty')
         require(data['data_status'] == 'market' and all(row.get('source_id') in {'eastmoney_public', 'tencent_public'}
@@ -159,6 +165,7 @@ def check_live_api(base: str) -> dict:
                 and data['attempts'][-1]['status'] == 'success',
                 f'{category} fallback order was not recorded')
         result['markets'][category] = {'rows': len(data['rows']), 'attempts': data['attempts']}
+        print(f'Installed live market {category}: {len(data["rows"])} rows', flush=True)
     fund = '510300.SH'
     profile = json_request(base, f'/api/ext/funds/{fund}/profile', timeout=180)
     nav = json_request(base, f'/api/ext/funds/{fund}/nav?range=year', timeout=180)

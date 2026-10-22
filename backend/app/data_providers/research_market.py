@@ -6,6 +6,7 @@ sessions, Jisilu endpoints, executable JavaScript, or synthetic price defaults.
 from __future__ import annotations
 
 import gzip
+import logging
 import math
 import re
 import threading
@@ -20,6 +21,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 SH = ZoneInfo('Asia/Shanghai')
+logger = logging.getLogger(__name__)
 PUBLIC = 'eastmoney_public'
 FILTERS = {
     'bonds': 'b:MK0354',
@@ -330,8 +332,11 @@ class ResearchMarketService:
                 attempts.append({'provider': provider.name, 'status': 'unsupported'})
             except PermissionError:
                 attempts.append({'provider': provider.name, 'status': 'unconfigured'})
-            except Exception:  # noqa: BLE001 -- supplier exceptions/URLs can include keys
+            except Exception as exc:  # noqa: BLE001 -- supplier exceptions/URLs can include keys
                 attempts.append({'provider': provider.name, 'status': 'failed'})
+                reason = str(exc) if isinstance(exc, ResearchSourceError) else type(exc).__name__
+                logger.warning('Research source failed: provider=%s operation=%s reason=%s',
+                               provider.name, operation, reason)
         if not found:
             raise ResearchSourceError('所有可用数据源均未返回有效行情；原数据已保留，请稍后重试或检查主 API 权限')
         warnings = [DISCLOSURE] if any(r.source in {PUBLIC, 'tencent_public'} for r in found.values()) else []

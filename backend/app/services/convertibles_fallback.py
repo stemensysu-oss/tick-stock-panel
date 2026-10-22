@@ -88,6 +88,7 @@ class FallbackConvertibleProvider:
                 stock = lookup.get(item.stock_code)
                 if stock:
                     items[i] = item.model_copy(update={'stock_price': stock.price,
+                        'stock_name': item.stock_name or (stock.name if stock.name != stock.symbol else None),
                         'stock_change_pct': stock.change_pct, 'stock_quote_at': stock.quote_at,
                         'quote_source': f'{item.quote_source} / 正股:{stock.source}'})
             day = max(datetime.fromisoformat(r.quote_at).astimezone(SH).date().isoformat() for r in batch.rows)

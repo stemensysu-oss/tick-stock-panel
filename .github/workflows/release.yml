@@ -134,6 +134,12 @@ jobs:
         # 不加 --extra backtest, 主包不含 vectorbt/numba/llvmlite
         run: uv sync --frozen --no-dev --extra desktop --extra legacy-cpu
 
+      - name: 公开行情网络预检 (Windows)
+        if: matrix.platform == 'windows'
+        timeout-minutes: 5
+        working-directory: backend
+        run: uv run --frozen --no-sync python ../scripts/research_market_live_check.py --category etf
+
       - name: 安装 PyInstaller
         # 必须装进 backend 的 uv 环境 (pywebview/polars 等依赖都在那里),
         # 否则根目录 uv run 找不到依赖, 打包出来的产物启动即崩。

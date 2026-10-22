@@ -50,6 +50,14 @@ def test_gbk_names_decode_without_replacement():
     assert PublicBackupProvider(HTTP(lambda *args: body)).quotes(['110001.SH'])[0].name == '合成转债'
 
 
+def test_one_malformed_timestamp_does_not_blank_valid_securities():
+    body = (quote() + quote('sh110002', stamp='20261399123000')).encode()
+    provider = PublicBackupProvider(HTTP(lambda *args: body))
+    rows = provider.quotes(['110001.SH', '110002.SH'])
+    assert [row.symbol for row in rows] == ['110001.SH']
+    assert '1 条报价' in provider.coverage_notes[0]
+
+
 def test_catalog_count_mismatch_is_disclosed_and_no_time_is_invented():
     def response(url, params):
         return '3' if url.endswith('Count') else [
@@ -84,3 +92,20 @@ def test_primary_success_prevents_all_public_backup_requests(monkeypatch):
     assert len(result.attempts) == 1
     assert result.attempts[0]['provider'] == 'tickflow'
     assert json.loads(json.dumps(result.attempts))[0]['status'] == 'success'
+
+
+def test_dated_directory_fallback_still_requires_a_live_quote(monkeypatch):
+    from app.data_providers.research_market import ResearchSourceError
+    from app.data_providers.research_reference_catalog import CATALOGS
+    monkeypatch.setitem(CATALOGS, 'etf_hq_fund', ['110001.SH'])
+    def offline(*args):
+        raise ResearchSourceError('network')
+    provider = PublicBackupProvider(HTTP(lambda *args: quote().encode()))
+    monkeypatch.setattr(provider, '_live_catalog', offline)
+    result = provider.market('etf')
+    assert result[0].price == 110.5
+    assert result[0].source == 'tencent_public'
+    assert '2026-10-22' in result[0].extra['coverage_note']
+    assert '当次获取' in result[0].extra['coverage_note']
+    monkeypatch.setattr(provider, 'quotes', lambda *args: [])
+    assert provider.market('etf') == []  # A directory never supplies a placeholder price.

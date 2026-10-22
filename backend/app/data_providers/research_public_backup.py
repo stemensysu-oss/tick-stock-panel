@@ -60,6 +60,18 @@ class PublicBackupProvider:
         self.coverage_notes = []
 
     def _catalog(self, node):
+        try:
+            return self._live_catalog(node)
+        except (ResearchSourceError, ValueError, TypeError, KeyError):
+            from app.data_providers.research_reference_catalog import CATALOGS, SNAPSHOT_DATE
+
+            if node not in CATALOGS:
+                raise
+            self.coverage_notes.append(
+                f'在线目录读取失败，使用 {SNAPSHOT_DATE} 公开目录快照；可能缺少新上市品种。价格仍由腾讯接口当次获取，并非目录内的旧价格。')
+            return list(CATALOGS[node])
+
+    def _live_catalog(self, node):
         raw_count = self.http.get(SINA + 'Market_Center.getHQNodeStockCount', {'node': node}).json()
         count = int(raw_count)
         if not 0 < count <= 2500:
@@ -84,6 +96,7 @@ class PublicBackupProvider:
     def quotes(self, symbols):
         requested = set(symbols)
         output = []
+        invalid = 0
         for offset in range(0, len(symbols), 50):
             codes = [s[-2:].lower() + s[:6] for s in symbols[offset:offset + 50]
                      if re.fullmatch(r'\d{6}\.(SH|SZ)', s)]
@@ -99,13 +112,18 @@ class PublicBackupProvider:
                     continue
                 if not re.fullmatch(r'\d{14}', fields[30]):
                     continue  # No date -> no quote; never attach today's date to ticktime.
-                dt = datetime.strptime(fields[30], '%Y%m%d%H%M%S').replace(tzinfo=SH)
-                when = quote_time(dt.timestamp())
-                price = number(fields[3], positive=True)
-                if price is None:
-                    continue
-                output.append(MarketRow(symbol, fields[1], price, when, TENCENT,
-                                        number(fields[32])))
+                try:
+                    dt = datetime.strptime(fields[30], '%Y%m%d%H%M%S').replace(tzinfo=SH)
+                    when = quote_time(dt.timestamp())
+                    price = number(fields[3], positive=True)
+                    if price is None:
+                        continue
+                    output.append(MarketRow(symbol, fields[1], price, when, TENCENT,
+                                            number(fields[32])))
+                except (ResearchSourceError, ValueError, OverflowError):
+                    invalid += 1  # One malformed security must not blank the whole market.
+        if invalid:
+            self.coverage_notes.append(f'{invalid} 条报价的时间或数值异常，已排除，未使用默认值补齐。')
         return output
 
     def market(self, category):
