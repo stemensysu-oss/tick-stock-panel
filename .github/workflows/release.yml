@@ -157,7 +157,7 @@ jobs:
       - name: 港股分析契约测试 (真实HTTP路径，模型为测试替身)
         if: matrix.platform == 'windows' || matrix.platform == 'macos'
         working-directory: backend
-        run: uv run --frozen --with pytest==9.0.3 --no-sync python -m pytest tests/test_codex_macos_discovery.py tests/test_ai_provider.py tests/test_ai_probe.py tests/test_international_stocks.py tests/test_hk_stock_analysis.py tests/test_hk_fundamentals.py tests/test_stock_analysis_beijing_today.py tests/test_stock_analyzer_index.py -q
+        run: uv run --frozen --with pytest==9.0.3 --with pytest-asyncio==1.3.0 --no-sync python -m pytest tests/test_codex_macos_discovery.py tests/test_ai_provider.py tests/test_ai_probe.py tests/test_international_stocks.py tests/test_hk_stock_analysis.py tests/test_hk_fundamentals.py tests/test_stock_analysis_beijing_today.py tests/test_stock_analyzer_index.py -q
 
       - name: Mac 原生 Codex CLI 桌面路径验证（无账户请求）
         if: matrix.platform == 'macos'
@@ -172,7 +172,7 @@ jobs:
       - name: 基金收益、披露及转债条款契约测试
         if: matrix.platform == 'windows' || matrix.platform == 'macos'
         working-directory: backend
-        run: uv run --frozen --with pytest==9.0.3 --no-sync python -m pytest tests/test_fund_enrichment.py tests/test_convertibles_disclosures.py tests/test_custom_funds.py tests/test_research_fallback.py tests/test_fund_review_regressions.py tests/test_custom_convertibles.py tests/test_content_typography.py tests/test_preferences_cache.py tests/test_preferences_concurrent_write.py -q
+        run: uv run --frozen --with pytest==9.0.3 --with pytest-asyncio==1.3.0 --no-sync python -m pytest tests/test_fund_enrichment.py tests/test_convertibles_disclosures.py tests/test_custom_funds.py tests/test_research_fallback.py tests/test_fund_review_regressions.py tests/test_custom_convertibles.py tests/test_content_typography.py tests/test_preferences_cache.py tests/test_preferences_concurrent_write.py -q
 
       - name: 安装 PyInstaller
         # 必须装进 backend 的 uv 环境 (pywebview/polars 等依赖都在那里),
