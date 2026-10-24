@@ -331,12 +331,23 @@ def check_international(base: str) -> dict:
     require(len(japan['rows'])>=30 and japan['close']>0 and japan['levels']['pivot'],'7203 actual history/levels missing')
     require(japan['source']=='yahoo_public' and japan['price_basis']=='source_unspecified','Japan source/basis incorrect')
     require(japan['quote']['quote_status']=='delayed','Delayed Japan quote represented as realtime')
+    refreshed = json_request(base, '/api/watchlist/hk-quotes', timeout=120)
+    shown = {row['symbol']: row for row in refreshed['rows']}
+    enriched = {row['symbol']: row for row in json_request(base, '/api/watchlist/enriched')['rows']}
+    for symbol, currency, status in [('AAPL.US','USD','historical'),('7203.JP','JPY','delayed')]:
+        require(symbol in shown and shown[symbol]['currency'] == currency and
+                shown[symbol]['close'] > 0 and shown[symbol]['quote_status'] == status,
+                f'{symbol} watchlist quote projection failed')
+        require(symbol in enriched and enriched[symbol]['currency'] == currency and enriched[symbol]['close'] > 0,
+                f'{symbol} watchlist enriched view lost the foreign quote')
     print('AAPL and 7203 actual public data, search, watchlist and levels verified; real AI model not configured',flush=True)
     return {'aapl':{'verified_live_fetch':True,'data_kind':'historical_daily','rows':len(data['rows']),
-                   'as_of':data['as_of'],'currency':'USD','search':True,'watchlist':True,'levels':True},
+                   'as_of':data['as_of'],'currency':'USD','search':True,'watchlist':True,'levels':True,
+                   'quote_display':True,'enriched_display':True},
             'japan':{'symbol':'7203.JP','search':True,'watchlist':True,'verified_live_data':True,
                      'source':japan['source'],'rows':len(japan['rows']),'as_of':japan['as_of'],
-                     'currency':'JPY','quote_status':'delayed','price_basis':japan['price_basis']}}
+                     'currency':'JPY','quote_status':'delayed','price_basis':japan['price_basis'],
+                     'quote_display':True,'enriched_display':True}}
 
 
 

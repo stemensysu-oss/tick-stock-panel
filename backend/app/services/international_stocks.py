@@ -151,7 +151,7 @@ def cached_rows(symbols):
                 quote_at=None,
                 quote_source=None,
                 quote_status="unavailable",
-                quote_warnings=["历史数据尚未读取；日股需要配置个人J-Quants密钥。"],
+                quote_warnings=["数据尚未读取；请刷新以按原有API、公开补充源顺序获取。"],
             )
         )
         with _LOCK:
@@ -181,7 +181,7 @@ def quote_snapshot(symbols, force=False):
             if not latest:
                 snapshot(symbol, force=force)
         except Exception:  # noqa: BLE001 -- isolate providers and never expose credential-bearing errors
-            warnings.append(f"{symbol}未取得新数据，保留上次历史收盘；日股请检查个人数据源配置。")
+            warnings.append(f"{symbol}未取得新数据，保留上次数据；请检查来源状态，公开补充接口也可能暂时不可用。")
     return dict(
         rows=cached_rows(symbols),
         attempts=[],
