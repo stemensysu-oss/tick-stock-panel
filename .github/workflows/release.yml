@@ -157,7 +157,7 @@ jobs:
       - name: 港股分析契约测试 (真实HTTP路径，模型为测试替身)
         if: matrix.platform == 'windows' || matrix.platform == 'macos'
         working-directory: backend
-        run: uv run --frozen --with pytest==9.0.3 --no-sync python -m pytest tests/test_international_stocks.py tests/test_hk_stock_analysis.py tests/test_stock_analysis_beijing_today.py tests/test_stock_analyzer_index.py -q
+        run: uv run --frozen --with pytest==9.0.3 --no-sync python -m pytest tests/test_codex_macos_discovery.py tests/test_ai_provider.py tests/test_ai_probe.py tests/test_international_stocks.py tests/test_hk_stock_analysis.py tests/test_stock_analysis_beijing_today.py tests/test_stock_analyzer_index.py -q
 
       - name: 基金收益、披露及转债条款契约测试
         if: matrix.platform == 'windows' || matrix.platform == 'macos'

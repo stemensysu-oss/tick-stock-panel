@@ -307,6 +307,7 @@ def codex_cli_available() -> bool:
         proc = subprocess.run(
             [*base, "--version"],
             capture_output=True,
+            env=_codex_launch_environment(base, os.environ.copy()),
             timeout=15,
             check=False,
         )
@@ -707,7 +708,10 @@ async def probe_ai_config(
     """
     if provider == CODEX_CLI_PROVIDER:
         if not codex_cli_available():
-            raise RuntimeError("Codex CLI 不可用: 未找到可运行的 codex 命令")
+            raise RuntimeError(
+                "Codex CLI 不可用: TSP 当前桌面环境未能找到或运行 codex。"
+                "若终端可用，请检查桌面启动时的 PATH、Node 运行环境或执行权限。"
+            )
         return ""
     if not api_key:
         raise RuntimeError("未配置 API Key")
@@ -999,7 +1003,7 @@ def _run_codex_process(
             list(args),
             input=prompt.encode("utf-8"),
             capture_output=True,
-            env=env,
+            env=_codex_launch_environment(args, env),
             timeout=timeout,
             check=False,
         )
@@ -1114,7 +1118,17 @@ def _resolve_command(command: str) -> str | None:
         resolved = shutil.which(f"{command}.cmd")
     if not resolved and sys.platform == "win32":
         resolved = _resolve_windows_codex_command(command)
+    if not resolved and sys.platform == "darwin":
+        from app.services.codex_macos import resolve
+        resolved = resolve()
     return resolved
+
+
+def _codex_launch_environment(args: Sequence[str], env: dict[str, str]) -> dict[str, str]:
+    if sys.platform == "darwin" and args:
+        from app.services.codex_macos import launch_environment
+        return launch_environment(args[0], env)
+    return env
 
 
 def _resolve_windows_codex_command(command: str) -> str | None:
