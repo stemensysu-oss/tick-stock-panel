@@ -128,7 +128,7 @@ jobs:
 
       - name: 内容字体与研究界面回归测试
         working-directory: frontend
-        run: pnpm exec vitest run src/lib/contentTypography.test.ts src/pages/settings/ContentTypographySettings.test.tsx src/custom/stock-analysis/extension.hk.test.tsx src/custom/funds src/custom/convertibles src/custom/multi-asset/MultiAssetPage.test.tsx
+        run: pnpm exec vitest run src/lib/contentTypography.test.ts src/pages/settings/ContentTypographySettings.test.tsx src/pages/settings/AI.codex.test.tsx src/components/stock-analysis/HkFinancialStatements.test.tsx src/custom/stock-analysis/extension.hk.test.tsx src/custom/funds src/custom/convertibles src/custom/multi-asset/MultiAssetPage.test.tsx
 
       - name: 安装 uv
         uses: astral-sh/setup-uv@v3
@@ -157,7 +157,17 @@ jobs:
       - name: 港股分析契约测试 (真实HTTP路径，模型为测试替身)
         if: matrix.platform == 'windows' || matrix.platform == 'macos'
         working-directory: backend
-        run: uv run --frozen --with pytest==9.0.3 --no-sync python -m pytest tests/test_codex_macos_discovery.py tests/test_ai_provider.py tests/test_ai_probe.py tests/test_international_stocks.py tests/test_hk_stock_analysis.py tests/test_stock_analysis_beijing_today.py tests/test_stock_analyzer_index.py -q
+        run: uv run --frozen --with pytest==9.0.3 --no-sync python -m pytest tests/test_codex_macos_discovery.py tests/test_ai_provider.py tests/test_ai_probe.py tests/test_international_stocks.py tests/test_hk_stock_analysis.py tests/test_hk_fundamentals.py tests/test_stock_analysis_beijing_today.py tests/test_stock_analyzer_index.py -q
+
+      - name: Mac 原生 Codex CLI 桌面路径验证（无账户请求）
+        if: matrix.platform == 'macos'
+        working-directory: backend
+        env:
+          TSP_CODEX_NPM_ROOT: ${{ runner.temp }}/tsp-cli-probe
+          PYTHONPATH: .
+        run: |
+          npm install --prefix "$TSP_CODEX_NPM_ROOT" --no-audit --no-fund @openai/codex@0.163.0
+          uv run --frozen --no-sync python ../packaging/macos_codex_smoke.py
 
       - name: 基金收益、披露及转债条款契约测试
         if: matrix.platform == 'windows' || matrix.platform == 'macos'

@@ -61,6 +61,15 @@ def set_japan_source(req: JapanKeyRequest):
     return japan_source()
 
 
+@router.get('/hk-fundamentals')
+def hk_fundamentals(symbol: str, force: bool = False):
+    from app.services.hk_fundamentals import snapshot
+    try:
+        return snapshot(symbol, force=force)
+    except ValueError:
+        raise HTTPException(422, '请输入完整五位港股代码，如00700.HK') from None
+
+
 @router.get('/hk-data')
 def hk_data(symbol: str, force: bool = False):
     from app.services.hk_stock_analysis import snapshot

@@ -2643,6 +2643,17 @@ export interface MultiAssetImportInput { category: string; csv_text: string; exp
 export interface MultiAssetImportPreview extends MultiAssetSnapshot { row_count: number }
 
 // ===== API surface =====
+export interface HkFundamentals {
+  symbol: string; status: string; fetched_at: string; warnings: string[];
+  references: { label: string; url: string }[];
+  tables: Record<string, {
+    label: string; status: string; source?: string; source_url?: string;
+    reports: { period_end: string; period_start: string | null; announce_date: string | null;
+      report_type: string; currency: string;
+      items: { code: string; name: string; value: number; unit: string }[] }[];
+  }>;
+}
+
 export const api = {
   health: () => request<{ status: string; version: string; mode: string }>('/health'),
 
@@ -4106,6 +4117,7 @@ export const api = {
 
   japanSource: () => request<{ configured: boolean }>('/api/stock-analysis/japan-source'),
   saveJapanSource: (api_key: string) => request<{ configured: boolean }>('/api/stock-analysis/japan-source', { method: 'PUT', body: JSON.stringify({ api_key }) }),
+  hkFundamentals: (symbol: string, force = false) => request<HkFundamentals>(`/api/stock-analysis/hk-fundamentals?symbol=${encodeURIComponent(symbol)}&force=${force}`, { quiet: true, timeoutMs: 120_000 }),
   // ===== 个股分析 =====
   stockAnalysisHk: (symbol: string, force = false) => request<{
     symbol: string; name: string; currency: string; rows: KlineRow[]; as_of: string;

@@ -102,6 +102,7 @@ export const QK = {
                            ['kline', symbol, start, end, extColumns ?? ''] as const,
   klineLatest:          (symbol: string) => ['kline-latest', symbol] as const,
   stockAnalysisHk: (symbol: string) => ['hk-stock-analysis', symbol] as const,
+  hkFundamentals: (symbol: string) => ['hk-fundamentals', symbol] as const,
   stockLevels:          (symbol: string, days?: number) => ['stock-levels', symbol, days ?? 120] as const,
   klineMinute:          (symbol: string, date: string) =>
                              ['kline-minute', symbol, date] as const,

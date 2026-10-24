@@ -116,7 +116,7 @@ export function StockAnalysis() {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn bg-gradient-to-r from-sky-500/25 to-blue-500/15 border border-sky-400/30 text-sky-300 text-xs font-medium hover:from-sky-500/35 hover:to-blue-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                {isExternalSymbol(symbol) ? `AI ${symbol.endsWith('.HK') ? '港股' : symbol.endsWith('.US') ? '美股' : '日股'}技术分析` : 'AI 个股分析'}
+                {isExternalSymbol(symbol) ? symbol.endsWith('.HK') ? 'AI 港股研究分析' : `AI ${symbol.endsWith('.US') ? '美股' : '日股'}技术分析` : 'AI 个股分析'}
               </button>
               {!isExternalSymbol(symbol) && <button
                 onClick={() => setShowPriceAlerts(true)}

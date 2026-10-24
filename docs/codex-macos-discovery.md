@@ -15,3 +15,9 @@
 这样可让应用继承同一终端的环境。若测试由失败变为通过，可进一步确认是桌面与终端环境差异。定位具体 CLI 安装位置只需 `command -v codex`，无需提供认证文件、Token 或密钥。
 
 回归使用临时目录模拟 Finder PATH 与 Homebrew/Node 管理器安装位置，没有使用真实账户；不把 Windows 上的路径模拟测试称为 Mac 原生实测。官方非交互方式见 [Codex exec](https://developers.openai.com/codex/noninteractive/)。
+
+## 模型选择
+
+旧版模型下拉使用固定预设，点击 Codex 卡片时默认选中 GPT-5.6，即使 CLI 更新也不会自动切换。新版将已有的“跟随本机 Codex 默认”设为首选，并加入 `gpt-6.1-sol`、`gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna` 高推理选项。存量配置不自动迁移；可主动选择新选项。模型 ID 原样传入 `codex exec --model`；跟随默认时不传该参数，继续采用本机配置。选项并非账户授权清单，实际权限需通过分析请求确认，失败不会静默换模型。
+
+原生 Mac CI 安装官方 `@openai/codex@0.163.0`，使用临时用户目录模拟 npm-global 与 nvm 安装位置、精简 PATH，实际运行 `--version` 和 `exec --help`。这不使用登录资料、不请求模型；行情真实联网验证与测试模型的 AI 分析契约另列，不能将其称为真实 GPT-6 生成验证。

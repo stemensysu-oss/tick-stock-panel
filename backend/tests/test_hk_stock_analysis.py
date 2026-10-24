@@ -32,6 +32,8 @@ def bars(count=80):
 @pytest.fixture(autouse=True)
 def clean(monkeypatch):
     hk._CACHE.clear()
+    from app.services import hk_fundamentals
+    monkeypatch.setattr(hk_fundamentals, "snapshot", lambda *a, **k: {})
     monkeypatch.setattr(
         hk,
         "quote_snapshot",

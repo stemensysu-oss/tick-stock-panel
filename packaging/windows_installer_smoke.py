@@ -17,6 +17,7 @@ import tempfile
 import time
 import traceback
 from contextlib import suppress
+from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
@@ -218,6 +219,18 @@ def check_live_api(base: str) -> dict:
     """No credentials. Exercise real public fallback in the INSTALLED application."""
     hk_watchlist = check_hk_watchlist(base)
     hk_analysis = check_hk_analysis(base)
+    financials = json_request(base, '/api/stock-analysis/hk-fundamentals?symbol=00700.HK', timeout=120)
+    require(financials['status'] == 'available', 'Tencent financial statements are unavailable')
+    for table in ('income', 'balance_sheet', 'cash_flow'):
+        reports = financials['tables'][table]['reports']
+        require(reports and reports[0]['currency'] == 'CNY' and len(reports[0]['items']) >= 10,
+                f'Tencent {table} reporting currency or actual statement fields are invalid')
+        require(reports[0]['period_end'] <= datetime.now().date().isoformat(), 'Future financial period')
+    hk_analysis['financial_statements'] = {
+        table: {'source': data['source'], 'periods': len(data['reports']),
+                'latest_period': data['reports'][0]['period_end'], 'currency': data['reports'][0]['currency'],
+                'latest_items': len(data['reports'][0]['items'])}
+        for table, data in financials['tables'].items()}
     before = json_request(base, '/api/ext/convertibles')
     bonds = json_request(base, '/api/ext/convertibles/refresh',
                          body={'expected_revision': before['revision']}, timeout=180)

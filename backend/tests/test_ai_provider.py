@@ -694,7 +694,8 @@ def test_codex_cli_available_false_when_command_missing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_codex_exec_args_exclude_ephemeral(monkeypatch):
+@pytest.mark.parametrize("selected_model", ["gpt-5.6-sol", "gpt-6-sol", "gpt-6.1-sol", ""])
+async def test_codex_exec_args_exclude_ephemeral(monkeypatch, selected_model):
     """exec 参数不含 --ephemeral: 老版本 codex(如 0.58)无此参数, 传了直接报错。"""
     captured: dict = {}
 
@@ -708,7 +709,7 @@ async def test_codex_exec_args_exclude_ephemeral(monkeypatch):
     monkeypatch.setattr(ai_provider, "_run_codex_process", fake_run_process)
     monkeypatch.setattr(ai_provider, "_read_output_file", lambda p: "ok")
     monkeypatch.setattr(ai_provider, "_remove_tree_best_effort", lambda p: None)
-    monkeypatch.setattr(ai_provider, "current_ai_model", lambda: "gpt-5.6-sol")
+    monkeypatch.setattr(ai_provider, "current_ai_model", lambda: selected_model)
 
     out = await ai_provider._run_codex_cli(
         [{"role": "user", "content": "hi"}], max_tokens=None, timeout=1.0,
@@ -717,4 +718,7 @@ async def test_codex_exec_args_exclude_ephemeral(monkeypatch):
     args = captured["args"]
     assert "--ephemeral" not in args
     assert "exec" in args and "--skip-git-repo-check" in args
-    assert args[args.index("--model") + 1] == "gpt-5.6-sol"
+    if selected_model:
+        assert args[args.index("--model") + 1] == selected_model
+    else:
+        assert "--model" not in args

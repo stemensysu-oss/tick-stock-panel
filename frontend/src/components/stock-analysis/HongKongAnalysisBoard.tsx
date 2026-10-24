@@ -1,5 +1,6 @@
 import { marketLabel } from '@/lib/hongKong'
 import { JapanSourceSettings } from './JapanSourceSettings'
+import { HkFinancialStatements } from './HkFinancialStatements'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -26,7 +27,8 @@ export function HongKongAnalysisBoard({ symbol }: { symbol: string }) {
       <p className="mt-2 text-xs text-muted">日K来源：{data.source_name} · 抓取时间：{data.fetched_at} · 成交量为来源原单位</p>
       {data.warnings.map((warning, i) => <p key={i} className="mt-2 text-xs text-warning">{warning}</p>)}
       <AnalysisKChart rows={data.rows} levels={data.levels as Record<LevelType, PriceLevel[]>} series={data.series} seriesDates={data.dates} defaultLevelTypes={['pivot','extreme','keltner_s']} height={480} />
-      <p className="mt-3 text-xs text-muted">点击上方“AI {label}技术分析”使用已配置的AI服务解读这份数据。未配置时可继续查看图表与关键价位。</p>
+      <p className="mt-3 text-xs text-muted">点击上方 AI 分析使用已配置的服务解读已取得的数据。未配置时可继续查看图表与关键价位。</p>
     </>}
+    {symbol.endsWith('.HK') && <HkFinancialStatements key={symbol} symbol={symbol} />}
   </section>
 }

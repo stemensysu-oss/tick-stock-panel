@@ -46,8 +46,8 @@ const CODEX_PROVIDER = 'codex_cli'
 const OPENAI_PROVIDER = 'openai'
 const OPENAI_COMPAT_PROVIDER = 'openai_compat'
 const CODEX_COMMAND = 'codex'
-const DEFAULT_CODEX_MODEL = 'gpt-5.6-sol'
-const DEFAULT_CODEX_REASONING_EFFORT = 'xhigh'
+const DEFAULT_CODEX_MODEL = ''
+const DEFAULT_CODEX_REASONING_EFFORT = ''
 const DEFAULT_OPENAI_MODEL = 'gpt-5.5'
 const DEFAULT_REASONING_EFFORT = 'high'
 const SAVED_CODEX_OPTION_VALUE = '__saved_codex_config__'
@@ -59,12 +59,16 @@ const CODEX_REASONING_LABELS: Record<string, string> = {
 type CodexModelOption = { label: string; value: string; model: string; effort: string; hint: string }
 
 const CODEX_MODEL_OPTIONS: CodexModelOption[] = [
-  { label: 'GPT-5.6 Sol · 极高（推荐）', value: 'gpt-5.6-sol:xhigh', model: 'gpt-5.6-sol', effort: 'xhigh', hint: '旗舰档，适合复杂金融分析与专业任务' },
+  { label: '跟随本机 Codex 默认（推荐）', value: '', model: '', effort: '', hint: '使用本机 Codex CLI 配置的模型与推理强度；未配置时由 CLI 选择默认模型' },
+  { label: 'GPT-6.1 Sol · 高', value: 'gpt-6.1-sol:high', model: 'gpt-6.1-sol', effort: 'high', hint: '需要当前 CLI 和登录账户支持；模型权限需通过实际分析确认，连接测试仅检查 CLI 启动' },
+  { label: 'GPT-6 Astra · 高', value: 'gpt-6-astra:high', model: 'gpt-6-astra', effort: 'high', hint: '需要当前 CLI 和登录账户支持；模型权限需通过实际分析确认，连接测试仅检查 CLI 启动' },
+  { label: 'GPT-6 Sol · 高', value: 'gpt-6-sol:high', model: 'gpt-6-sol', effort: 'high', hint: '需要当前 CLI 和登录账户支持；模型权限需通过实际分析确认，连接测试仅检查 CLI 启动' },
+  { label: 'GPT-6 Luna · 高', value: 'gpt-6-luna:high', model: 'gpt-6-luna', effort: 'high', hint: '需要当前 CLI 和登录账户支持；模型权限需通过实际分析确认，连接测试仅检查 CLI 启动' },
+  { label: 'GPT-5.6 Sol · 极高', value: 'gpt-5.6-sol:xhigh', model: 'gpt-5.6-sol', effort: 'xhigh', hint: '保留旧版模型选项，是否可用由 CLI 和账户决定' },
   { label: 'GPT-5.6 Terra · 极高', value: 'gpt-5.6-terra:xhigh', model: 'gpt-5.6-terra', effort: 'xhigh', hint: '平衡智能、速度与使用成本' },
   { label: 'GPT-5.6 Luna · 极高', value: 'gpt-5.6-luna:xhigh', model: 'gpt-5.6-luna', effort: 'xhigh', hint: '适合成本敏感与高频分析任务' },
   { label: 'gpt-5.5 · 高', value: 'gpt-5.5:high', model: 'gpt-5.5', effort: 'high', hint: '使用 gpt-5.5 + high 推理档' },
   { label: 'gpt-5.5 · 极高', value: 'gpt-5.5:xhigh', model: 'gpt-5.5', effort: 'xhigh', hint: '使用 gpt-5.5 + xhigh 推理档' },
-  { label: '跟随本机 Codex 默认', value: '', model: '', effort: '', hint: '使用本机 Codex CLI 配置的默认模型与推理强度' },
 ]
 
 const codexModelLabel = (model?: string, effort?: string) => {

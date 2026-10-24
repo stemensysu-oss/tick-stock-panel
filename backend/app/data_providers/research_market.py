@@ -95,7 +95,7 @@ def quote_time(value, *, milliseconds=False):
 class PublicHTTP:
     """Fixed public hosts only; no inherited authentication or credential logs."""
     hosts = frozenset({'query1.finance.yahoo.com', 'push2.eastmoney.com', 'api.fund.eastmoney.com',
-                       'fundf10.eastmoney.com', 'datacenter-web.eastmoney.com',
+                       'fundf10.eastmoney.com', 'datacenter-web.eastmoney.com', 'datacenter.eastmoney.com',
                        'vip.stock.finance.sina.com.cn', 'qt.gtimg.cn',
                        'www.aastocks.com', 'query.sse.com.cn',
                        'smartbox.gtimg.cn', 'suggest3.sinajs.cn', 'web.ifzq.gtimg.cn'})
