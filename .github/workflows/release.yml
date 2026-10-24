@@ -11,7 +11,7 @@ name: 桌面客户端发布
 #   - 版本号通过 input 传入, 与 tag 解耦, 更灵活
 #
 # 使用:
-#   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.19 -f platforms=windows
+#   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.20 -f platforms=windows
 #   或 GitHub 网页 Actions → 桌面客户端发布 → Run workflow
 on:
   push:
@@ -22,7 +22,7 @@ on:
       version:
         description: '版本号 (必须与 frontend/package.json 一致；个人 fork 仅构建，不发布 Release/tag)'
         required: true
-        default: 'v0.3.19'
+        default: 'v0.3.20'
       platforms:
         description: '要构建的平台 (逗号分隔: windows,macos,linux)'
         required: true
@@ -128,7 +128,7 @@ jobs:
 
       - name: 内容字体与研究界面回归测试
         working-directory: frontend
-        run: pnpm exec vitest run src/lib/contentTypography.test.ts src/pages/settings/ContentTypographySettings.test.tsx src/custom/funds src/custom/convertibles src/custom/multi-asset/MultiAssetPage.test.tsx
+        run: pnpm exec vitest run src/lib/contentTypography.test.ts src/pages/settings/ContentTypographySettings.test.tsx src/custom/stock-analysis/extension.hk.test.tsx src/custom/funds src/custom/convertibles src/custom/multi-asset/MultiAssetPage.test.tsx
 
       - name: 安装 uv
         uses: astral-sh/setup-uv@v3
@@ -157,7 +157,7 @@ jobs:
       - name: 港股分析契约测试 (真实HTTP路径，模型为测试替身)
         if: matrix.platform == 'windows' || matrix.platform == 'macos'
         working-directory: backend
-        run: uv run --frozen --with pytest==9.0.3 --no-sync python -m pytest tests/test_hk_stock_analysis.py tests/test_stock_analysis_beijing_today.py tests/test_stock_analyzer_index.py -q
+        run: uv run --frozen --with pytest==9.0.3 --no-sync python -m pytest tests/test_international_stocks.py tests/test_hk_stock_analysis.py tests/test_stock_analysis_beijing_today.py tests/test_stock_analyzer_index.py -q
 
       - name: 基金收益、披露及转债条款契约测试
         if: matrix.platform == 'windows' || matrix.platform == 'macos'

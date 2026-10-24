@@ -9,7 +9,7 @@ import { LastStockChip } from '@/components/LastStockChip'
 import { AnalysisKChart, type PriceLevel, type LevelType } from '@/components/stock-analysis/AnalysisKChart'
 import { PriceAlertDialog } from '@/components/stock-analysis/PriceAlertDialog'
 import { HongKongAnalysisBoard } from '@/components/stock-analysis/HongKongAnalysisBoard'
-import { isHongKongSymbol } from '@/lib/hongKong'
+import { isExternalSymbol } from '@/lib/hongKong'
 import { api } from '@/lib/api'
 import { useLastStock } from '@/lib/useLastStock'
 import { QK } from '@/lib/queryKeys'
@@ -85,7 +85,7 @@ export function StockAnalysis() {
     <>
       <PageHeader
         title="个股分析"
-        subtitle="内地 / 港股 · 日K与关键价位 · AI分析（以已接入数据为准）"
+        subtitle="内地 / 港股 / 美股 / 日股 · 日K与关键价位 · AI分析（以已接入数据为准）"
         right={
           <div className="flex items-center gap-2">
             <LastStockChip stock={lastStock} onSelect={onSelect} />
@@ -97,13 +97,13 @@ export function StockAnalysis() {
         {/* 搜索栏 */}
         <div className="flex items-center gap-3">
           <div className="w-72">
-            <StockFinancialSearch onSelect={onSelect} assetTypes="stock,index,hk" />
+            <StockFinancialSearch onSelect={onSelect} assetTypes="stock,index,hk,us,jp" />
           </div>
           {symbol && (
             <>
               <button
-                onClick={() => { if (!isHongKongSymbol(symbol)) setPreviewSymbol(symbol) }}
-                title={isHongKongSymbol(symbol) ? '港股日K与来源见下方看板' : '查看个股日 K 详情'}
+                onClick={() => { if (!isExternalSymbol(symbol)) setPreviewSymbol(symbol) }}
+                title={isExternalSymbol(symbol) ? '港股日K与来源见下方看板' : '查看个股日 K 详情'}
                 className="group flex items-center gap-2 text-sm rounded-md px-1.5 py-0.5 -mx-1.5 hover:bg-elevated transition-colors"
               >
                 <span className="text-foreground font-medium group-hover:text-sky-300 transition-colors">{name || symbol}</span>
@@ -116,9 +116,9 @@ export function StockAnalysis() {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn bg-gradient-to-r from-sky-500/25 to-blue-500/15 border border-sky-400/30 text-sky-300 text-xs font-medium hover:from-sky-500/35 hover:to-blue-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                {isHongKongSymbol(symbol) ? 'AI 港股技术分析' : 'AI 个股分析'}
+                {isExternalSymbol(symbol) ? `AI ${symbol.endsWith('.HK') ? '港股' : symbol.endsWith('.US') ? '美股' : '日股'}技术分析` : 'AI 个股分析'}
               </button>
-              {!isHongKongSymbol(symbol) && <button
+              {!isExternalSymbol(symbol) && <button
                 onClick={() => setShowPriceAlerts(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn border border-sky-400/25 bg-sky-400/[0.08] text-sky-300 text-xs font-medium hover:border-sky-400/40 hover:bg-sky-400/[0.12] transition-all"
                 title="设置价格点位提醒"
@@ -137,10 +137,10 @@ export function StockAnalysis() {
               <EmptyState
                 icon={LineChart}
                 title="选择一只股票开始分析"
-                hint="搜索代码或名称，例如00700 / 腾讯。查看日K与关键价位，AI按已接入数据进行分析；港股财务与直接新闻尚未接入。"
+                hint="搜索代码或名称，例如00700 / 腾讯、AAPL / 苹果、7203 / 丰田。查看日K与关键价位，AI按已接入数据进行分析；港股财务与直接新闻尚未接入。"
               />
             ) : (
-              isHongKongSymbol(symbol) ? <HongKongAnalysisBoard key={symbol} symbol={symbol} /> : <StockAnalysisBoard symbol={symbol} />
+              isExternalSymbol(symbol) ? <HongKongAnalysisBoard key={symbol} symbol={symbol} /> : <StockAnalysisBoard symbol={symbol} />
             )}
           </div>
           <HistorySidebar />

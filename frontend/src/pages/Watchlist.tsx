@@ -17,7 +17,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { StockPreviewDialog } from '@/components/StockPreviewDialog'
 import { HongKongQuoteDialog } from '@/components/HongKongQuoteDialog'
-import { isHongKongSymbol } from '@/lib/hongKong'
+import { isExternalSymbol, marketLabel, marketType } from '@/lib/hongKong'
 import { toNavItems, type NavItem } from '@/lib/listNav'
 import {
   DimensionMembersDialog,
@@ -376,7 +376,7 @@ function StockSearchBox({
                       {r.asset_type === 'etf' && (
                         <span className="shrink-0 px-1 py-0.5 rounded text-[10px] leading-none bg-accent/10 text-accent">ETF</span>
                       )}
-                      {(r.asset_type === 'hk' || isHongKongSymbol(r.symbol)) && <span className="shrink-0 rounded bg-amber-500/10 px-1 py-0.5 text-[10px] text-amber-500">港股</span>}
+                      {(r.asset_type === 'hk' || isExternalSymbol(r.symbol)) && <span className="shrink-0 rounded bg-amber-500/10 px-1 py-0.5 text-[10px] text-amber-500">{marketLabel(r.symbol)}</span>}
                       {r.asset_type === 'index' && (
                         <span className="shrink-0 px-1 py-0.5 rounded text-[10px] leading-none bg-sky-500/10 text-sky-400">指数</span>
                       )}
@@ -531,7 +531,7 @@ const StockCard = React.memo(function StockCard({
   onToggleMember: (symbol: string, groupId: string, member: boolean) => void
   groupChangePending: boolean
 }) {
-  const hongKong = isHongKongSymbol(r.symbol)
+  const hongKong = isExternalSymbol(r.symbol)
   const board = hongKong ? null : boardTag(r.symbol)
   const price = r.rt_price ?? r.close
   const pct = r.rt_pct ?? r.change_pct
@@ -608,7 +608,7 @@ const StockCard = React.memo(function StockCard({
               {board.label}
             </span>
           )}
-          {hongKong && <span className="shrink-0 text-[10px] text-amber-500">港股 · {r.currency === 'HKD' ? 'HKD' : '币种待确认'}</span>}
+          {hongKong && <span className="shrink-0 text-[10px] text-amber-500">{marketLabel(r.symbol)} · {r.currency || '币种待确认'}</span>}
           {!hongKong && r.consecutive_limit_ups > 0 && (
             <span className="shrink-0 inline-flex items-center justify-center px-1 h-[16px] rounded bg-danger/15 text-danger text-[9px] font-bold tabular-nums">
               {r.consecutive_limit_ups === 1 ? '首板' : `${r.consecutive_limit_ups}连`}
@@ -864,7 +864,7 @@ export function Watchlist() {
   // symbol 派生只依赖 enriched.data: 旧写法 symbols 每次渲染都是新引用 (击穿 memo)
   // 且 filter×find 为 O(n²), 实时行情每 tick 重渲染时放大为每秒全量比较。
   // 指数无本地分钟K数据, 分时批量请求剔除指数 symbol (省请求, 避免逐只 404)
-  const hkSymbolsKey = useMemo(() => (list.data?.symbols ?? []).map(entry => entry.symbol).filter(isHongKongSymbol).sort().join(','), [list.data])
+  const hkSymbolsKey = useMemo(() => (list.data?.symbols ?? []).map(entry => entry.symbol).filter(isExternalSymbol).sort().join(','), [list.data])
   const hkQuotes = useQuery({
     queryKey: QK.watchlistHkQuotes(hkSymbolsKey),
     queryFn: () => api.watchlistHkQuotes(),
@@ -879,21 +879,21 @@ export function Watchlist() {
   const enrichedRows = useMemo(() => {
     const base = enriched.data?.rows ?? []
     const quotes = new Map((hkQuotes.data?.rows ?? []).map(row => [row.symbol, row]))
-    const result = base.map((row: any) => isHongKongSymbol(row.symbol)
-      ? { ...row, ...quotes.get(row.symbol), asset_type: 'hk' } : row)
+    const result = base.map((row: any) => isExternalSymbol(row.symbol)
+      ? { ...row, ...quotes.get(row.symbol), asset_type: marketType(row.symbol) } : row)
     const known = new Set(result.map((row: any) => row.symbol))
     for (const entry of list.data?.symbols ?? []) {
-      if (isHongKongSymbol(entry.symbol) && !known.has(entry.symbol)) result.push({
+      if (isExternalSymbol(entry.symbol) && !known.has(entry.symbol)) result.push({
         ...entry, name: entry.symbol, close: null, change_pct: null,
-        currency: null, ...quotes.get(entry.symbol), asset_type: 'hk',
+        currency: null, ...quotes.get(entry.symbol), asset_type: marketType(entry.symbol),
       })
     }
     return result
   }, [enriched.data, hkQuotes.data, list.data])
   const { symbols, symbolsKey, minuteSymbols, minuteSymbolsKey } = useMemo(() => {
     const rows = enrichedRows ?? []
-    const syms = rows.filter((r: any) => !isHongKongSymbol(r.symbol)).map((r: any) => r.symbol)
-    const nonIndex = rows.filter((r: any) => r.asset_type !== 'index' && !isHongKongSymbol(r.symbol)).map((r: any) => r.symbol)
+    const syms = rows.filter((r: any) => !isExternalSymbol(r.symbol)).map((r: any) => r.symbol)
+    const nonIndex = rows.filter((r: any) => r.asset_type !== 'index' && !isExternalSymbol(r.symbol)).map((r: any) => r.symbol)
     return {
       symbols: syms,
       symbolsKey: syms.join(','),
@@ -921,7 +921,7 @@ export function Watchlist() {
   // 蜡烛用每 tick 刷新的 enriched 当日 OHLC 前端覆盖/追加, 蜡烛随实时行情跳动, 零额外请求。
   const klineData = useMemo(() => {
     const base = dailyKVisible ? (klineBatch.data?.data ?? {}) : {}
-    const liveRows = enrichedRows.filter((row: any) => !isHongKongSymbol(row.symbol))
+    const liveRows = enrichedRows.filter((row: any) => !isExternalSymbol(row.symbol))
     const asOf = enriched.data?.as_of
     if (!dailyKVisible || !liveRows?.length || !asOf) return base
     const liveBySymbol = new Map<string, any>(liveRows.map((r: any) => [r.symbol, r]))
@@ -987,7 +987,7 @@ export function Watchlist() {
     if (!intradayVisible) return {}
     return extendMinuteTail(
       minuteBatch.data?.data ?? {},
-      enrichedRows.filter((row: any) => !isHongKongSymbol(row.symbol)),
+      enrichedRows.filter((row: any) => !isExternalSymbol(row.symbol)),
       enriched.data?.dates,
       new Date(),
     )
@@ -1124,7 +1124,7 @@ export function Watchlist() {
   const groupPcts = useMemo(
     () => computeGroupPcts(
       listEntries,
-      new Map(rows.filter((r: any) => !isHongKongSymbol(r.symbol)).map((r: any) => [r.symbol as string, r])),
+      new Map(rows.filter((r: any) => !isExternalSymbol(r.symbol)).map((r: any) => [r.symbol as string, r])),
     ),
     [listEntries, rows],
   )
@@ -1163,7 +1163,7 @@ export function Watchlist() {
   const showRealtimeDot = realtimeRunning && realtimeMode === 'watchlist'
   // 真正被监控的标的集合 (自选列表前 watchlistMonitoredCount 个)
   const monitoredSymbols = useMemo(
-    () => showRealtimeDot ? new Set(allSymbols.filter(symbol => !isHongKongSymbol(symbol)).slice(0, watchlistMonitoredCount)) : new Set<string>(),
+    () => showRealtimeDot ? new Set(allSymbols.filter(symbol => !isExternalSymbol(symbol)).slice(0, watchlistMonitoredCount)) : new Set<string>(),
     [showRealtimeDot, allSymbols, watchlistMonitoredCount],
   )
 
@@ -1311,7 +1311,7 @@ export function Watchlist() {
     .map(c => `${(c.source as { configId: string }).configId}.${(c.source as { fieldName: string }).fieldName}`)
     .join(',')
   const extChartSymbolsKey = useMemo(
-    () => sortedRows.filter(r => !isHongKongSymbol(r.symbol)).map(r => r.symbol as string).sort().join(','),
+    () => sortedRows.filter(r => !isExternalSymbol(r.symbol)).map(r => r.symbol as string).sort().join(','),
     [sortedRows],
   )
   const extSeriesQuery = useQuery({
@@ -1333,13 +1333,13 @@ export function Watchlist() {
 
   // 分时列集合竞价叠加: 左侧窄栏价格/匹配量/未匹配量 (来自同一张时序扩展表)
   const auctionCfg = useAuctionConfig(columns)
-  const auctionSymbols = useMemo(() => sortedRows.filter(r => !isHongKongSymbol(r.symbol)).map(r => r.symbol as string), [sortedRows])
+  const auctionSymbols = useMemo(() => sortedRows.filter(r => !isExternalSymbol(r.symbol)).map(r => r.symbol as string), [sortedRows])
   const auctionData = useAuctionSeries(auctionCfg, auctionSymbols)
 
   // 切股导航列表: 按列表当前展示顺序 (与 sortedRows 一致, 排序/筛选后行序随之变化)。
   // 弹窗未打开时跳过构建 — sortedRows 随行情 tick 重建, 避免无谓分配。
   const previewNavItems = useMemo(
-    () => previewSymbol ? toNavItems(sortedRows.filter(r => !isHongKongSymbol(r.symbol))) : [],
+    () => previewSymbol ? toNavItems(sortedRows.filter(r => !isExternalSymbol(r.symbol))) : [],
     [previewSymbol, sortedRows],
   )
 
@@ -1405,7 +1405,7 @@ export function Watchlist() {
   // 指标全为 null 的行属于 enriched 缓存未覆盖 (新股/冷门/新用户未同步), 非筛选导致.
   // 用 close 是否为 null/undefined 判断 "整行指标缺失" (close 是 enriched 最基础字段).
   const pendingCount = useMemo(
-    () => sortedRows.filter((r: any) => !isHongKongSymbol(r.symbol) && r.close == null).length,
+    () => sortedRows.filter((r: any) => !isExternalSymbol(r.symbol) && r.close == null).length,
     [sortedRows],
   )
 
@@ -1708,8 +1708,8 @@ export function Watchlist() {
         </div>
       )}
 
-      {!!hkSymbolsKey && <div className="mx-5 my-2 rounded-btn border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-muted" role="status">港股币种以有效报价确认为准，HKD 表示港元，公开报价可能延迟；单独每分钟更新，刷新按钮会重新取数。港股不参与内地技术指标、K 线和分组涨跌统计。
-        {hkRefreshError && <p className="mt-1 text-warning">港股刷新失败，保留上次有效报价：{hkRefreshError.message}</p>}
+      {!!hkSymbolsKey && <div className="mx-5 my-2 rounded-btn border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-muted" role="status">港股、美股、日股保留各自代码和币种。美日历史收盘不会标为实时行情；日股需要个人 J-Quants 密钥，免费计划延迟12周。国际证券不参与内地指标与分组涨跌统计。
+        {hkRefreshError && <p className="mt-1 text-warning">市场数据刷新失败，保留上次有效报价：{hkRefreshError.message}</p>}
         {hkQuotes.data?.warnings.map((warning, index) => <p key={index} className="mt-1 text-warning">{warning}</p>)}
       </div>}
 
@@ -1836,8 +1836,8 @@ export function Watchlist() {
               }}
               renderCell={(r: any, col: ColumnConfig) => {
                 // Mainland indicator contracts do not apply to HK quote rows.
-                if (isHongKongSymbol(r.symbol) && (col.source.type === 'ext' || !['symbol', 'price', 'pct'].includes(col.source.key))) {
-                  return <td className="px-2 py-1.5 text-center text-xs text-muted" title="港股此数据能力尚未接入">{col.source.type === 'builtin' && ['candle', 'intraday'].includes(col.source.key) ? '港股未接入' : '—'}</td>
+                if (isExternalSymbol(r.symbol) && (col.source.type === 'ext' || !['symbol', 'price', 'pct'].includes(col.source.key))) {
+                  return <td className="px-2 py-1.5 text-center text-xs text-muted" title="该市场此数据能力尚未接入">{col.source.type === 'builtin' && ['candle', 'intraday'].includes(col.source.key) ? '此能力未接入' : '—'}</td>
                 }
                 // ext 列
                 if (col.source.type === 'ext') {
@@ -1849,7 +1849,7 @@ export function Watchlist() {
                 const name = r.rt_name ?? r.name
                 // 自选页 symbol 列：预览 + 内嵌删除（减号图标，二次确认）
                 if (key === 'symbol') {
-                  const board = isHongKongSymbol(r.symbol) ? null : boardTag(r.symbol)
+                  const board = isExternalSymbol(r.symbol) ? null : boardTag(r.symbol)
                   return (
                     <td className="px-1.5 py-1.5">
                       <div className="flex items-center gap-1 w-full">
@@ -1866,7 +1866,7 @@ export function Watchlist() {
                               {name}
                             </span>
                           )}
-                          {isHongKongSymbol(r.symbol) && <span className="shrink-0 text-[10px] text-amber-500">港股 · {r.currency === 'HKD' ? 'HKD' : '币种待确认'}</span>}
+                          {isExternalSymbol(r.symbol) && <span className="shrink-0 text-[10px] text-amber-500">{marketLabel(r.symbol)} · {r.currency || '币种待确认'}</span>}
                           {board ? (
                             <span className={`shrink-0 inline-flex items-center justify-center w-[18px] h-[18px] rounded text-[9px] font-bold leading-none border ${board.color}`}>
                               {board.label}
@@ -1938,7 +1938,7 @@ export function Watchlist() {
                 // 实时行情列：price/pct/amount 使用 rt_ 回退（自选页有实时推送）
                 const numCls = 'px-2 py-1.5 text-right num tabular-nums'
                 if (key === 'price') {
-                  return <td className={`${numCls} ${priceColorClass(pct)}`}>{fmtPrice(price)}{isHongKongSymbol(r.symbol) && <span className="ml-1 text-[10px] text-muted">{r.currency === 'HKD' ? 'HKD' : '币种待确认'}</span>}</td>
+                  return <td className={`${numCls} ${priceColorClass(pct)}`}>{fmtPrice(price)}{isExternalSymbol(r.symbol) && <span className="ml-1 text-[10px] text-muted">{r.currency || '币种待确认'}</span>}</td>
                 }
                 if (key === 'pct') {
                   return <td className={`${numCls} ${priceColorClass(pct)}`}>{fmtPct(pct)}</td>
@@ -2105,7 +2105,7 @@ export function Watchlist() {
         onClose={() => setCustomizerOpen(false)}
       />
 
-      {previewSymbol && isHongKongSymbol(previewSymbol) ? <HongKongQuoteDialog
+      {previewSymbol && isExternalSymbol(previewSymbol) ? <HongKongQuoteDialog
         symbol={previewSymbol} name={previewName}
         row={rows.find((row: any) => row.symbol === previewSymbol)} onClose={closePreview}
         inWatchlist={groupBySymbol.has(previewSymbol)} adding={addMutation.isPending}
@@ -2116,7 +2116,7 @@ export function Watchlist() {
         symbol={previewSymbol}
         name={previewName}
         onClose={closePreview}
-        navList={(previewNavList.length > 0 ? previewNavList : previewNavItems).filter(item => !isHongKongSymbol(item.symbol))}
+        navList={(previewNavList.length > 0 ? previewNavList : previewNavItems).filter(item => !isExternalSymbol(item.symbol))}
         onNavigate={(sym, n) => { setPreviewSymbol(sym); setPreviewName(n ?? '') }}
       />}
 

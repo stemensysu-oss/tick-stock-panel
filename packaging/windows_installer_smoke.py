@@ -294,8 +294,37 @@ def check_live_api(base: str) -> dict:
                       'report_date': holdings['items'][0]['report_date'], 'source': profile['provider']}
     from research_enrichment_smoke import check_enrichment
     result['fund_bond_enrichment'] = check_enrichment(base, json_request, require)
+    result['international'] = check_international(base)
     result['content_typography'] = check_content_typography(base)
     return result
+
+
+def check_international(base: str) -> dict:
+    """AAPL and Japan are live fetched from public sources; data remains private to this run."""
+    for query, symbol in [('AAPL','AAPL.US'),('7203','7203.JP')]:
+        result = json_request(base, f'/api/kline/instruments/search?q={query}&asset_types=stock,index,hk,us,jp')
+        require(any(row['symbol'] == symbol for row in result['results']), f'{symbol} search failed')
+        json_request(base, '/api/watchlist', body={'symbol': symbol})
+    data = json_request(base, '/api/stock-analysis/international-data?symbol=AAPL.US', timeout=120)
+    require(data['currency'] == 'USD' and data['timezone'] == 'America/New_York', 'US currency/timezone invalid')
+    require(len(data['rows']) >= 100 and data['close'] > 0 and data['levels']['pivot'], 'AAPL history/levels missing')
+    require(data['quote']['quote_status'] == 'historical', 'Historical close represented as realtime')
+    entries = json_request(base,'/api/watchlist')['symbols']
+    require({'AAPL.US','7203.JP'} <= {r['symbol'] for r in entries}, 'International watchlist persistence failed')
+    state = json_request(base,'/api/stock-analysis/japan-source')
+    require(state['configured'] is False, 'CI must not use personal Japanese credentials')
+    japan = json_request(base,'/api/stock-analysis/international-data?symbol=7203.JP',timeout=120)
+    require(japan['currency']=='JPY' and japan['timezone']=='Asia/Tokyo','Japanese currency/timezone invalid')
+    require(len(japan['rows'])>=30 and japan['close']>0 and japan['levels']['pivot'],'7203 actual history/levels missing')
+    require(japan['source']=='yahoo_public' and japan['price_basis']=='source_unspecified','Japan source/basis incorrect')
+    require(japan['quote']['quote_status']=='delayed','Delayed Japan quote represented as realtime')
+    print('AAPL and 7203 actual public data, search, watchlist and levels verified; real AI model not configured',flush=True)
+    return {'aapl':{'verified_live_fetch':True,'data_kind':'historical_daily','rows':len(data['rows']),
+                   'as_of':data['as_of'],'currency':'USD','search':True,'watchlist':True,'levels':True},
+            'japan':{'symbol':'7203.JP','search':True,'watchlist':True,'verified_live_data':True,
+                     'source':japan['source'],'rows':len(japan['rows']),'as_of':japan['as_of'],
+                     'currency':'JPY','quote_status':'delayed','price_basis':japan['price_basis']}}
+
 
 
 def check_content_typography(base: str) -> dict:

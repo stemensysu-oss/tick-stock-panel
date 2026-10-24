@@ -16,7 +16,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from app.indicators.levels import compute_levels, summarize_levels
 from app.market_time import cn_today
@@ -28,6 +28,37 @@ from app.services.stock_analyzer import analyze_stock_stream
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/stock-analysis", tags=["stock-analysis"])
+
+
+@router.get('/international-data')
+def international_data(symbol: str, force: bool = False):
+    from app.services.international_stocks import snapshot
+    try:
+        return snapshot(symbol,force=force)
+    except ValueError as exc:
+        from app.data_providers.research_market import ResearchSourceError
+        raise HTTPException(502 if isinstance(exc,ResearchSourceError) else 422,str(exc)) from None
+
+
+class JapanKeyRequest(BaseModel):
+    api_key: SecretStr
+
+
+@router.get('/japan-source')
+def japan_source():
+    from app import secrets_store
+    return {'configured':bool(secrets_store.get_env_backed_secret('jquants_api_key','JQUANTS_API_KEY')),
+            'provider':'J-Quants V2','free_delay_weeks':12}
+
+
+@router.put('/japan-source')
+def set_japan_source(req: JapanKeyRequest):
+    from app import secrets_store
+    value=req.api_key.get_secret_value().strip()
+    if len(value)>4096:
+        raise HTTPException(422,'密钥长度异常')
+    secrets_store.save({'jquants_api_key':value})
+    return japan_source()
 
 
 @router.get('/hk-data')
@@ -56,6 +87,9 @@ def get_levels(
     if not symbol:
         raise HTTPException(400, "symbol 不能为空")
 
+    from app.data_providers.international import is_international
+    if is_international(symbol):
+        return international_data(symbol)
     from app.services.watchlist_hk import is_hk
     if is_hk(symbol):
         return hk_data(symbol)
@@ -102,6 +136,15 @@ async def analyze_stock(request: Request, req: AnalyzeRequest):
     if not req.symbol:
         raise HTTPException(400, "symbol 不能为空")
 
+    from app.data_providers.international import is_international
+    if is_international(req.symbol):
+        from app.services.hk_stock_analysis import analyze_stream
+        from app.services.international_stocks import snapshot
+        async def foreign_stream():
+            async for chunk in with_heartbeat(analyze_stream(req.symbol,req.focus,loader=snapshot)):
+                yield chunk+'\n'
+        return StreamingResponse(foreign_stream(),media_type='application/x-ndjson',
+            headers={'Cache-Control':'no-cache','X-Accel-Buffering':'no'})
     from app.services.watchlist_hk import is_hk
     if is_hk(req.symbol):
         from app.services.hk_stock_analysis import analyze_stream

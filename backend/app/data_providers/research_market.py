@@ -94,7 +94,7 @@ def quote_time(value, *, milliseconds=False):
 
 class PublicHTTP:
     """Fixed public hosts only; no inherited authentication or credential logs."""
-    hosts = frozenset({'push2.eastmoney.com', 'api.fund.eastmoney.com',
+    hosts = frozenset({'query1.finance.yahoo.com', 'push2.eastmoney.com', 'api.fund.eastmoney.com',
                        'fundf10.eastmoney.com', 'datacenter-web.eastmoney.com',
                        'vip.stock.finance.sina.com.cn', 'qt.gtimg.cn',
                        'www.aastocks.com', 'query.sse.com.cn',
@@ -126,8 +126,9 @@ class PublicHTTP:
         try:
             target = url + ('?' + urlencode(params) if params else '')
             request = Request(target, headers={
-                'User-Agent': 'Mozilla/5.0', 'Accept-Encoding': 'identity',
-                'Referer': ('https://finance.sina.com.cn/' if host == 'suggest3.sinajs.cn' else
+                'User-Agent': 'TSP/0.3.20 personal-research' if host == 'query1.finance.yahoo.com' else 'Mozilla/5.0', 'Accept-Encoding': 'identity',
+                'Referer': ('https://finance.yahoo.com/' if host == 'query1.finance.yahoo.com' else
+                            'https://finance.sina.com.cn/' if host == 'suggest3.sinajs.cn' else
                             'https://www.sse.com.cn/' if host == 'query.sse.com.cn' else
                             'https://quote.eastmoney.com/' if host == 'push2.eastmoney.com' else
                             'https://fundf10.eastmoney.com/'),
@@ -146,7 +147,7 @@ class PublicHTTP:
             status = exc.code if isinstance(exc, HTTPError) else None
             problem = f'HTTP {status}' if status else type(exc).__name__
             error = ResearchSourceError(f'公开补充源暂时不可用（{problem}），请稍后重试')
-            error.retryable = status is None or status in {429, 500, 502, 503, 504}
+            error.retryable = (status is None or status in {429, 500, 502, 503, 504}) and not (host == 'query1.finance.yahoo.com' and status in {401,403,429})
             raise error from None
 
 

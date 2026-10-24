@@ -82,6 +82,12 @@ def ai_messages(data, focus=''):
         '没有历史换手率，不推断筹码持仓；成交量原单位不作金额换算。'
         '分红拆合股可导致不复权跳空，不得当作真实收益或确定突破。'
         '不输出买卖、仓位、交易指令，不将历史最后收盘称为当前实时价格。')
+    if data.get('asset_type') in {'us','jp'}:
+        system = system.replace('港股',data['market_label']).replace('HKD',data['currency'])
+        system += '不得套用香港或内地规则，交易日期按输入市场当地日期。'
+        if data.get('price_basis') == 'source_unspecified':
+            system = system.replace('不复权历史价格', '来源未说明复权口径的历史价格')
+            system += '不得断言复权方式，也不能把样本涨幅解释为包含分红的实际收益。'
     payload = {k: data[k] for k in ('symbol', 'name', 'currency', 'price_basis', 'volume_unit',
         'as_of', 'source_name', 'fetched_at', 'warnings', 'levels')}
     payload['daily'] = data['rows'][-90:]
@@ -90,11 +96,11 @@ def ai_messages(data, focus=''):
                    build_focus_instruction(focus, report_name='港股技术分析报告')}]
 
 
-async def analyze_stream(symbol, focus=''):
+async def analyze_stream(symbol, focus='', *, loader=None):
     try:
-        data = await anyio.to_thread.run_sync(snapshot, symbol)
+        data = await anyio.to_thread.run_sync(loader or snapshot, symbol)
         yield json.dumps(dict(type='meta', symbol=symbol, close=data['close'], levels=data['levels'],
-            summary=f"港股 HKD · 不复权 · {data['as_of']} · {data['source_name']}；" +
+            summary=f"{data.get('market_label', '港股')} {data['currency']} · {'不复权' if data['price_basis'] == 'unadjusted' else '来源未说明复权口径'} · {data['as_of']} · {data['source_name']}；" +
                     summarize_levels(data['levels'], data['close']).replace('当前价 ', '历史收盘 ', 1)), ensure_ascii=False)
         from app.services.ai_provider import stream_ai_text
         content = False
@@ -107,4 +113,4 @@ async def analyze_stream(symbol, focus=''):
             raise ValueError('empty model response')
         yield json.dumps(dict(type='done'))
     except Exception:  # noqa: BLE001 -- do not return provider keys or upstream raw errors
-        yield json.dumps(dict(type='error', message='港股AI分析未完成：请检查日K数据及设置中的AI服务配置或权限，原有报告保留。'), ensure_ascii=False)
+        yield json.dumps(dict(type='error', message='AI分析未完成：请检查日K数据及设置中的AI服务配置或权限，原有报告保留。'), ensure_ascii=False)

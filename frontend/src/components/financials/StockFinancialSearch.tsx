@@ -77,7 +77,7 @@ export function StockFinancialSearch({ onSelect, assetTypes }: Props) {
         <input
           ref={inputRef}
           type="text"
-          placeholder={assetTypes?.includes('hk') ? "代码或名称，如 00700 / 腾讯" : "输入股票代码或名称，如 600000 / 浦发"}
+          placeholder={assetTypes?.includes('hk') ? "代码或名称，如 00700、AAPL、7203" : "输入股票代码或名称，如 600000 / 浦发"}
           aria-label="搜索股票代码或名称"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); setActiveIdx(-1) }}
@@ -129,7 +129,7 @@ export function StockFinancialSearch({ onSelect, assetTypes }: Props) {
                       <span className={`shrink-0 px-1 py-0.5 rounded text-[10px] leading-none border ${b.color}`}>{b.label}</span>
                     )
                   })()}
-                  {r.asset_type === 'hk' && <span className="text-xs text-amber-500">港股</span>}
+                  {['hk','us','jp'].includes(r.asset_type || '') && <span className="text-xs text-amber-500">{r.asset_type === 'us' ? '美股 USD' : r.asset_type === 'jp' ? '日股 JPY' : '港股 HKD'}</span>}
                   {r.asset_type === 'index' && (
                     <span className="shrink-0 px-1 py-0.5 rounded text-[10px] leading-none bg-sky-500/10 text-sky-400">指数</span>
                   )}

@@ -5,6 +5,7 @@ import gzip
 import json
 import logging
 import math
+import re
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -159,6 +160,11 @@ def search_instruments(
     import polars as pl
 
     types = [t.strip() for t in asset_types.split(",") if t.strip()]
+    from app.data_providers.international import search as search_international
+    if any(t in types for t in ('hk','us','jp')) and (re.fullmatch(r'[A-Za-z][A-Za-z0-9.-]{0,18}|\d{4}(?:\.JP|\.T)?', q.strip(), re.I) or q.strip() in {'苹果','丰田','丰田汽车'}):
+        foreign = search_international(q.strip(), limit)
+        if foreign['results'] or re.fullmatch(r'\d{4}(?:\.JP|\.T)?|.*\.(?:US|JP|T)', q.strip(), re.I):
+            return foreign
     hk_data = None
     if 'hk' in types:
         from app.data_providers.research_hk_search import search_hk
@@ -166,14 +172,13 @@ def search_instruments(
             hk_data = search_hk(q.strip(), limit)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
-        import re
         if re.fullmatch(r'(?:\d{5}(?:\.HK)?|HK\d{5})', q.strip().upper()):
             # Five digits cannot be a mainland stock code. Failure to find HK
             # must not silently suggest 600700.SH as an alternative to 00700.HK.
             return hk_data
     parts: list[pl.DataFrame] = []
     for t in types:
-        if t == 'hk':
+        if t in {'hk','us','jp'}:
             continue  # HK directory is independent of the mainland repository.
         df_t = repo.get_instruments_asset(t)
         if df_t.is_empty() or "symbol" not in df_t.columns:
