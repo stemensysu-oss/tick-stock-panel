@@ -220,8 +220,45 @@ def _find_free_port(start: int, count: int = _PORT_PROBE_RANGE) -> int:
     return start
 
 
-def _run_uvmicorn(port: int, ready_event: threading.Event) -> None:
-    """后台线程: 启动 uvicorn 服务。ready_event 在线程退出时置位 (通知主线程)。"""
+class BackendLifecycle:
+    """Own the server until its lifespan and event loop have finished shutting down."""
+
+    def __init__(self) -> None:
+        self.server = None
+        self.thread = None
+        self.stop_requested = threading.Event()
+        self._lock = threading.Lock()
+
+    def attach_server(self, server) -> bool:
+        with self._lock:
+            self.server = server
+            server.should_exit = self.stop_requested.is_set()
+            return not server.should_exit
+
+    def start(self, port: int) -> None:
+        self.thread = threading.Thread(
+            target=_run_uvmicorn, args=(port, self), daemon=True, name="uvicorn",
+        )
+        self.thread.start()
+
+    def stop(self, timeout: float = 45.0) -> bool:
+        # Publish should_exit before waking observers. A stop during slow imports
+        # is remembered and checked again before server.run().
+        with self._lock:
+            if self.server is not None:
+                self.server.should_exit = True
+            self.stop_requested.set()
+        if self.thread is not None and self.thread.ident is not None:
+            self.thread.join(timeout=timeout)
+            if self.thread.is_alive():
+                logger.error("desktop backend shutdown timed out after %.1fs", timeout)
+                return False
+        logger.info("desktop backend shutdown completed")
+        return True
+
+
+def _run_uvmicorn(port: int, lifecycle: BackendLifecycle) -> None:
+    """后台线程: 保留服务控制权, 退出时运行现有 FastAPI lifespan 清理。"""
     import uvicorn
 
     try:
@@ -231,7 +268,6 @@ def _run_uvmicorn(port: int, ready_event: threading.Event) -> None:
         from app.main import app
     except Exception:
         logger.exception("后端模块导入失败 (app.main 或其依赖)")
-        ready_event.set()
         return
 
     config = uvicorn.Config(
@@ -241,13 +277,13 @@ def _run_uvmicorn(port: int, ready_event: threading.Event) -> None:
         log_level="info",
         access_log=False,    # 桌面版不需要访问日志
         loop="auto",
+        # SSE connections must not keep a closed desktop alive indefinitely.
+        timeout_graceful_shutdown=5,
     )
     server = uvicorn.Server(config)
 
-    # 线程结束时通知主线程 (无论正常退出还是异常)
-    def _signal_done(*exc):
-        ready_event.set()
-    server.config.callback_notify = None  # 不用 notify 机制
+    if not lifecycle.attach_server(server):
+        return
 
     try:
         server.run()
@@ -256,8 +292,6 @@ def _run_uvmicorn(port: int, ready_event: threading.Event) -> None:
         # 不捕获则线程静默死亡, 主线程 _wait_for_server 傻等满 60s 后报「超时」,
         # 真正的崩溃原因 (如某个原生库加载失败 / 缺 hidden import) 永远看不到。
         logger.exception("uvicorn 后端启动/运行失败")
-    finally:
-        ready_event.set()
 
 
 def _wait_for_server(port: int, timeout: float = 60.0) -> bool:
@@ -291,6 +325,11 @@ def _open_window(url: str) -> None:
     profile_dir = Path(settings.data_dir) / "webview"
     profile_dir.mkdir(parents=True, exist_ok=True)
     webview.settings["ALLOW_DOWNLOADS"] = True
+
+    if sys.platform == "darwin":
+        from app.desktop_macos import install_quit_handler
+
+        install_quit_handler()
 
     webview.create_window(
         _APP_NAME,
@@ -335,42 +374,39 @@ def main() -> int:
     if not _acquire_single_instance():
         return 0
 
+    lifecycle = BackendLifecycle()
+    exit_code = 0
     try:
         port = _find_free_port(_BASE_PORT)
         logger.info("桌面版后端将监听 127.0.0.1:%d", port)
 
         # 后台线程起 uvicorn
-        ready = threading.Event()
-        server_thread = threading.Thread(
-            target=_run_uvmicorn, args=(port, ready), daemon=True,
-            name="uvicorn",
-        )
-        server_thread.start()
+        lifecycle.start(port)
 
         # 轮询 health 接口等后端就绪 (含 lifespan 初始化, 最多 60s)
         if not _wait_for_server(port, timeout=60.0):
             logger.error("后端启动超时, 桌面版退出")
-            _release_single_instance()
-            return 1
-
-        url = f"http://127.0.0.1:{port}"
-        logger.info("打开桌面窗口: %s", url)
-        _open_window(url)
-
-        # 窗口关闭后, 进程退出 (daemon 线程会被回收)
-        logger.info("窗口已关闭, 桌面版退出")
-        return 0
+            exit_code = 1
+        else:
+            url = f"http://127.0.0.1:{port}"
+            logger.info("打开桌面窗口: %s", url)
+            _open_window(url)
+            logger.info("窗口已关闭, 正在停止后台服务")
     except KeyboardInterrupt:
-        return 0
+        pass
     except Exception:
         # 顶层兜底: console=False 下未捕获异常会「一闪退出」且无任何反馈。
         # 写完整 traceback 到 data/desktop.log, 并弹原生 MessageBox 让用户截图反馈。
         # 必须排在 KeyboardInterrupt 之后 —— Exception 是基类, 在前会遮蔽它。
         logger.exception("桌面客户端启动失败")
         _show_crash("TSP 启动失败", traceback.format_exc())
-        return 1
+        exit_code = 1
     finally:
+        if not lifecycle.stop():
+            exit_code = 1
         _release_single_instance()
+    logger.info("desktop exit completed: code=%d", exit_code)
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -12,6 +12,9 @@ from app import config, desktop
 
 @pytest.fixture
 def webview_stub(monkeypatch):
+    from app import desktop_macos
+
+    monkeypatch.setattr(desktop_macos, "install_quit_handler", Mock())
     stub = SimpleNamespace(
         settings={"ALLOW_DOWNLOADS": False},
         create_window=Mock(),

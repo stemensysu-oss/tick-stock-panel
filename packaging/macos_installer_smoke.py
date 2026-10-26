@@ -20,6 +20,7 @@ from pathlib import Path
 import psutil
 from windows_installer_smoke import check_api, check_live_api, clean_environment, require
 from write_build_record import file_sha256
+from macos_exit_check import verify_exit
 
 
 def stop(child):
@@ -37,7 +38,7 @@ def stop(child):
         require(not alive, 'The smoke application did not stop')
 
 
-def run_app(app, data, work, version, log):
+def run_app(app, data, work, version, log, exit_method='command_q', check_live=True):
     import Quartz
 
     with log.open('w', encoding='utf8') as output:
@@ -65,18 +66,22 @@ def run_app(app, data, work, version, log):
                     ready = ready or time.monotonic()
                     if time.monotonic() - ready >= 10:
                         check_api(base, version)
-                        live = check_live_api(base)
+                        live = check_live_api(base) if check_live else None
                         screenshot = log.with_suffix('.png')
                         capture = subprocess.run(['screencapture', '-x', str(screenshot)], check=False, capture_output=True)
+                        exit_result = verify_exit(child, exit_method, owned[0], data, base, log)
+                        require(exit_result['passed'], f'Mac graceful exit failed: {exit_result}')
                         return {'visible_window': True, 'health': True, 'window_count': len(owned),
                             'screenshot_saved': capture.returncode == 0 and screenshot.is_file(),
+                            'graceful_exit': exit_result,
                             'verified_live_fallback': live}
                 else:
                     ready = None
                 time.sleep(1)
             raise RuntimeError('Mac app did not expose a visible window and healthy backend within 180 seconds')
         finally:
-            stop(child)
+            if child.poll() is None:
+                stop(child)  # Failure cleanup only; never substitutes for passing normal exit.
 
 
 def main():
@@ -118,7 +123,8 @@ def main():
         shutil.rmtree(installed)
         subprocess.run(['ditto', str(source), str(installed)], check=True)
         require(sentinel.read_text(encoding='utf8') == 'preserve-external-user-data', 'App replacement deleted external data')
-        report['checks']['second_launch'] = run_app(installed, data, work, args.version, logs/'second-launch.log')
+        report['checks']['second_launch'] = run_app(installed, data, work, args.version, logs/'second-launch.log', 'window_close')
+        report['checks']['system_quit'] = run_app(installed, data, work, args.version, logs/'system-quit.log', 'system_quit', False)
         require(not report['checks']['first_launch']['verified_live_fallback']['content_typography']['restored'], 'First Mac launch did not use typography defaults')
         require(report['checks']['second_launch']['verified_live_fallback']['content_typography']['restored'], 'Mac replacement did not retain typography settings')
         require(sentinel.read_text(encoding='utf8') == 'preserve-external-user-data', 'Restart deleted external data')

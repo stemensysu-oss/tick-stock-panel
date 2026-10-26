@@ -11,7 +11,7 @@ name: 桌面客户端发布
 #   - 版本号通过 input 传入, 与 tag 解耦, 更灵活
 #
 # 使用:
-#   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.22 -f platforms=windows
+#   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.23 -f platforms=windows
 #   或 GitHub 网页 Actions → 桌面客户端发布 → Run workflow
 on:
   push:
@@ -22,7 +22,7 @@ on:
       version:
         description: '版本号 (必须与 frontend/package.json 一致；个人 fork 仅构建，不发布 Release/tag)'
         required: true
-        default: 'v0.3.22'
+        default: 'v0.3.23'
       platforms:
         description: '要构建的平台 (逗号分隔: windows,macos,linux)'
         required: true
@@ -108,6 +108,10 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 获取退出回归基线
+        if: matrix.platform == 'macos'
+        run: git fetch --depth=1 origin fda62b66db13859d25c6130e4c7f3832281bbec1
+
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -173,6 +177,24 @@ jobs:
         if: matrix.platform == 'windows' || matrix.platform == 'macos'
         working-directory: backend
         run: uv run --frozen --with pytest==9.0.3 --with pytest-asyncio==1.3.0 --no-sync python -m pytest tests/test_fund_enrichment.py tests/test_convertibles_disclosures.py tests/test_convertibles_reference.py tests/test_convertibles_reference_metrics.py tests/test_convertibles_calculation.py tests/test_convertibles_calculation_workspace.py tests/test_convertibles_expression.py tests/test_convertibles_cashflows.py tests/test_convertibles_research_v2.py tests/test_custom_funds.py tests/test_research_fallback.py tests/test_fund_review_regressions.py tests/test_custom_convertibles.py tests/test_content_typography.py tests/test_preferences_cache.py tests/test_preferences_concurrent_write.py -q
+
+      - name: 桌面退出与窗口回归测试
+        working-directory: backend
+        run: uv run --frozen --with pytest==9.0.3 --with pytest-asyncio==1.3.0 --no-sync python -m pytest tests/test_desktop_shutdown.py tests/test_desktop_macos_quit.py tests/test_desktop_window.py tests/test_tdxquant_probe.py tests/test_macos_data_dir.py -q
+
+      - name: Mac 旧版退出对照（记录真实退出码与崩溃报告）
+        if: matrix.platform == 'macos'
+        working-directory: backend
+        run: uv run --frozen --no-sync python ../packaging/macos_exit_baseline.py
+
+      - name: 保留 Mac 退出基线报告
+        if: always() && matrix.platform == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-exit-baseline-${{ github.run_id }}
+          path: ${{ runner.temp }}/tsp-mac-baseline-logs/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: 安装 PyInstaller
         # 必须装进 backend 的 uv 环境 (pywebview/polars 等依赖都在那里),
