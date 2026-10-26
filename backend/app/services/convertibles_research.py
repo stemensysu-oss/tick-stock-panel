@@ -302,7 +302,8 @@ class ConvertibleService:
         if current.revision != expected_revision or current.items:
             raise ConvertibleConflictError("清单已变化，请重新读取；市场初始化不会覆盖已有研究")
         candidate = ConvertibleSnapshot(as_of=as_of, source=f"市场清单 · {source}",
-                                        items=[calculate_metrics(item, as_of) for item in items])
+                                        items=[calculate_metrics(item, as_of) for item in items],
+                                        calculation_settings=current.calculation_settings)
         return self._commit(candidate, expected_revision)
 
     def preview(self, csv_text: str, as_of: str) -> ImportPreview:
@@ -374,7 +375,8 @@ class ConvertibleService:
         preview = self._preserve_research(parse_csv(csv_text, as_of), current)
         if not preview.valid:
             raise ConvertibleImportError(preview)
-        return self._commit(ConvertibleSnapshot(as_of=as_of, items=preview.items), expected_revision)
+        return self._commit(ConvertibleSnapshot(as_of=as_of, items=preview.items,
+            calculation_settings=current.calculation_settings), expected_revision)
 
     def preview_restore(self, backup: ConvertibleSnapshot) -> ImportPreview:
         errors = []
@@ -389,7 +391,8 @@ class ConvertibleService:
         if not errors:
             # Preview the same recomputed output, metadata and encoding used by
             # commit; otherwise a compact backup may pass but fail at save time.
-            candidate = ConvertibleSnapshot(as_of=backup.as_of, source=backup.source, items=items)
+            candidate = ConvertibleSnapshot(as_of=backup.as_of, source=backup.source, items=items,
+                                            calculation_settings=backup.calculation_settings)
             try:
                 self._check_payload_size(self._serialize_candidate(candidate))
             except ConvertibleStoreError:
@@ -411,6 +414,7 @@ class ConvertibleService:
             raise ConvertibleConflictError("清单已被另一操作更新，请重新预览备份后再恢复")
         return self._commit(ConvertibleSnapshot(
             as_of=backup.as_of, source=backup.source, items=preview.items,
+            calculation_settings=backup.calculation_settings,
         ), expected_revision)
 
     @staticmethod
@@ -480,5 +484,13 @@ class ConvertibleService:
             next_items.append(calculate_metrics(ConvertibleInput.model_validate(values), as_of))
         candidate = ConvertibleSnapshot(
             as_of=as_of, source=source, items=next_items,
+            calculation_settings=current.calculation_settings,
         )
         return self._commit(candidate, expected_revision)
+
+    def update_calculation_settings(self, settings, *, expected_revision):
+        current = self._load()
+        if current.revision != expected_revision:
+            raise ConvertibleConflictError('研究清单已更新，请重新载入后再保存公式与参数')
+        current.calculation_settings = settings
+        return self._commit(current, expected_revision)

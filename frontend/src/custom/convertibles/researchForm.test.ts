@@ -54,3 +54,10 @@ describe('研究数据导出', () => {
     expect(csv).not.toContain('research')
   })
 })
+
+it('编辑现金流保留原有公式、个人评级和带日期的参数来源', () => {
+  const original = { ...buildResearch(createResearchDraft()), calculation_settings: { enabled: true, formulas: { double_low: 'bond_price + 2' }, parameters: { discount_rate_pct: 3 } }, personal_rating: 'AA', parameter_note: '个人情景，非评级报告', fund_holding_report_date: '2026-06-30' }
+  const draft = createResearchDraft(original)
+  draft.discount_rate_pct = '4'
+  expect(buildResearch(draft)).toEqual({ ...original, discount_rate_pct: 4 })
+})

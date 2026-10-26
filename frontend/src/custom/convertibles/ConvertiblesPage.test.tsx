@@ -8,7 +8,7 @@ import { QK } from '@/lib/queryKeys'
 import { ConvertiblesPage } from './ConvertiblesPage'
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), status: vi.fn(), refresh: vi.fn(), references: vi.fn(), imported: null as ConvertibleDataset | null }))
-vi.mock('@/lib/api', () => ({ api: { convertibles: mocks.load, convertibleSourceStatus: mocks.status, refreshConvertibles: mocks.refresh, convertibleReferences: mocks.references } }))
+vi.mock('@/lib/api', () => ({ api: { convertibles: mocks.load, convertibleSourceStatus: mocks.status, refreshConvertibles: mocks.refresh, calculateConvertibles: mocks.references } }))
 vi.mock('@/components/Toast', () => ({ toast: vi.fn() }))
 vi.mock('./ImportPanel', () => ({ ImportPanel: ({ onSaved }: { onSaved: (dataset: ConvertibleDataset) => Promise<void> }) => <button onClick={() => void onSaved(mocks.imported!)}>模拟成功导入</button> }))
 
@@ -27,7 +27,7 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.resetAllMocks()
   window.localStorage.clear()
-  mocks.references.mockResolvedValue({ items: [], fetched_at: '2026-10-25T12:00:00+08:00', attempts: [], warnings: [] })
+  mocks.references.mockImplementation(async (revision: string) => ({ revision, references: [], attempts: [], warnings: [] }))
   mocks.status.mockResolvedValue({ provider: 'tickflow', configured: false, mode: 'unconfigured', message: '请配置行情 Key', capabilities: { quotes: true, terms: false, announcements: false }, last_refresh_at: null })
   host = document.createElement('div')
   document.body.append(host)
@@ -120,10 +120,10 @@ it('勾选两只可逐项对比，并可切换散点图打开同一研究集', a
 it('打开已有清单自动补齐纯债及到期日，排序显示使用参考但不改写原快照', async () => {
   const raw = snapshot('base', '已有研究转债')
   mocks.load.mockResolvedValue(raw)
-  mocks.references.mockResolvedValue({ items: [{ code: '100001.SH', pure_bond_value: 98.7654, valuation_date: '2026-10-23', maturity_date: '2027-12-27', credit_rating: 'AAA', warnings: [] }], attempts: [], warnings: ['公开模型参考'] })
+  mocks.references.mockResolvedValue({ revision: 'base', items: raw.items, references: [{ code: '100001.SH', pure_bond_value: 98.7654, valuation_date: '2026-10-23', maturity_date: '2027-12-27', credit_rating: 'AAA', warnings: [] }], attempts: [], warnings: ['公开模型参考'] })
   await act(async () => root.render(<QueryClientProvider client={client}><ConvertiblesPage /></QueryClientProvider>))
   await settle()
-  expect(mocks.references).toHaveBeenCalledWith(['100001'])
+  expect(mocks.references).toHaveBeenCalledWith('base')
   expect(host.textContent).toContain('98.77')
   expect(host.textContent).toContain('公开模型参考')
   expect(host.textContent).toContain('2026-10-23')

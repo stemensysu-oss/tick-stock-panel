@@ -11,9 +11,17 @@ from app.extensions import (
     BackendExtensionRegistrar,
     ExtensionContext,
 )
+from app.services.convertibles_calculation_config import (
+    ConvertibleCalculationSettings,
+    calculation_catalog,
+)
+from app.services.convertibles_calculation_workspace import (
+    ConvertibleCalculationSnapshot,
+    calculation_snapshot,
+)
 from app.services.convertibles_disclosures import ConvertibleDisclosures, disclosures
-from app.services.convertibles_reference import ConvertibleReferences, references
 from app.services.convertibles_fallback import FallbackConvertibleProvider
+from app.services.convertibles_reference import ConvertibleReferences, references
 from app.services.convertibles_research import (
     CSV_TEMPLATE,
     MAX_CSV_BYTES,
@@ -64,6 +72,18 @@ class ReferenceRequest(BaseModel):
     codes: list[Annotated[str, Field(min_length=6, max_length=12)]] = Field(min_length=1, max_length=2000)
 
 
+class CalculationRequest(RefreshRequest):
+    settings: ConvertibleCalculationSettings | None = None
+
+
+class CalculationSettingsRequest(RefreshRequest):
+    settings: ConvertibleCalculationSettings
+
+
+class CalculationPreviewRequest(RefreshRequest):
+    research: ConvertibleResearch
+
+
 class AnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     research: ConvertibleResearch
@@ -104,6 +124,39 @@ QuoteServiceDependency = Annotated[ConvertibleQuoteService, Depends(get_quote_se
 
 def setup(registrar: BackendExtensionRegistrar) -> None:
     router = APIRouter(prefix="/api/ext/convertibles", tags=["convertible-research"])
+
+    @router.get('/formula-catalog')
+    def formulas():
+        return calculation_catalog()
+
+    @router.post('/calculated', response_model=ConvertibleCalculationSnapshot)
+    def calculated(body: CalculationRequest, service: ServiceDependency):
+        try:
+            return calculation_snapshot(service, body.expected_revision, settings_override=body.settings)
+        except ConvertibleConflictError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except ConvertibleStoreError as exc:
+            raise HTTPException(503, str(exc)) from None
+
+    @router.put('/calculation-settings', response_model=ConvertibleSnapshot)
+    def save_calculation_settings(body: CalculationSettingsRequest, service: ServiceDependency):
+        try:
+            return service.update_calculation_settings(body.settings, expected_revision=body.expected_revision)
+        except ConvertibleConflictError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except ConvertibleStoreError as exc:
+            raise HTTPException(503, str(exc)) from None
+
+    @router.post('/{code}/calculation-preview', response_model=ConvertibleCalculationSnapshot)
+    def preview_calculation(code: str, body: CalculationPreviewRequest, service: ServiceDependency):
+        try:
+            return calculation_snapshot(service, body.expected_revision, code=code, research_override=body.research)
+        except ConvertibleConflictError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except ConvertibleStoreError as exc:
+            raise HTTPException(503, str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from None
 
     @router.post('/references', response_model=ConvertibleReferences)
     def reference_data(body: ReferenceRequest):

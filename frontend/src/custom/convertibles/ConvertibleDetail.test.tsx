@@ -10,7 +10,7 @@ import { buildResearch, createResearchDraft } from './researchForm'
 const mocks = vi.hoisted(() => ({ analyze: vi.fn(), save: vi.fn(), saved: vi.fn(), disclosures: vi.fn() }))
 vi.mock('@/lib/api', () => ({
   ApiError: class extends Error { constructor(message: string, readonly status: number) { super(message) } },
-  api: { analyzeConvertible: mocks.analyze, saveConvertibleResearch: mocks.save, convertibleDisclosures: mocks.disclosures },
+  api: { previewConvertibleCalculation: mocks.analyze, saveConvertibleResearch: mocks.save, convertibleDisclosures: mocks.disclosures },
 }))
 let host: HTMLDivElement
 let root: Root
@@ -23,7 +23,7 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
   client = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
-  mocks.analyze.mockResolvedValue({ ...item, ytm_pct: 5 })
+  mocks.analyze.mockResolvedValue({ items: [{ ...item, ytm_pct: 5 }] })
 })
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); vi.unstubAllGlobals() })
 async function settle() { for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) }) }
@@ -43,7 +43,7 @@ it('试算不写入，保存携带打开时版本；冲突不会清空表单或�
   await click('现金流与估值')
   await fill('纯债折现率（%）', '3')
   await click('试算')
-  expect(mocks.analyze).toHaveBeenCalledWith('123001.SZ', expect.objectContaining({ discount_rate_pct: 3, price_basis: 'full', cash_flows_complete: true }), 'revision-1')
+  expect(mocks.analyze).toHaveBeenCalledWith('123001.SZ', 'revision-1', expect.objectContaining({ discount_rate_pct: 3, price_basis: 'full', cash_flows_complete: true }))
   expect(mocks.save).not.toHaveBeenCalled()
   expect(host.textContent).toContain('本次试算结果')
   mocks.save.mockRejectedValue(new ApiError('版本冲突', 409))
@@ -63,7 +63,7 @@ it('调整条款数值不自动把昨日观察完整性确认更新到今天', a
   await click('条款观察')
   await fill('强赎触发比例', '135')
   await click('试算')
-  expect(mocks.analyze).toHaveBeenCalledWith('123001.SZ', expect.objectContaining({ observations_as_of: '2026-10-20', call_clause: expect.objectContaining({ trigger_ratio_pct: 135, observations_complete: false }) }), 'revision-1')
+  expect(mocks.analyze).toHaveBeenCalledWith('123001.SZ', 'revision-1', expect.objectContaining({ observations_as_of: '2026-10-20', call_clause: expect.objectContaining({ trigger_ratio_pct: 135, observations_complete: false }) }))
 })
 
 it('试算版本冲突清除旧试算结果并禁止保存，防止误用另一个行情日', async () => {

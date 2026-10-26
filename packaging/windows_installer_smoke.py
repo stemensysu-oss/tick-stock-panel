@@ -240,8 +240,24 @@ def check_live_api(base: str) -> dict:
                 for item in bonds['items']), 'Missing real convertible provenance/time')
     computed = sum(item.get('double_low') is not None for item in bonds['items'])
     require(computed > 100, 'Convertible stock bindings/prices or reference conversion prices are missing')
+    calculated = json_request(base, '/api/ext/convertibles/calculated', body={'expected_revision': bonds['revision']}, timeout=180)
+    counts = {key: sum(row.get(key) is not None for row in calculated['items'])
+              for key in ('ytm_pct', 'outstanding_amount', 'stock_pb', 'debt_to_float_cap_pct')}
+    require(all(count > 100 for count in counts.values()), 'Convertible calculated public fields lack usable coverage')
+    require(all(row.get('calculation_details', {}).get('ytm_pct', {}).get('formula') == 'IRR(full_price, day_count_basis) * 100'
+                for row in calculated['items']), 'Formula provenance missing')
+    scenario = json_request(base, '/api/ext/convertibles/calculated', body={'expected_revision': bonds['revision'],
+        'settings': {'parameters': {'discount_rate_pct': 3.0}, 'formulas': {'double_low': 'bond_price + 5'}}}, timeout=180)
+    require(sum(row.get('pure_bond_value') is not None for row in scenario['items']) > 100, 'Personal pure bond scenario unavailable')
+    require(all(abs(row['double_low'] - row['bond_price'] - 5) < 1e-8 for row in scenario['items'] if row.get('bond_price') is not None), 'Custom expression was not applied')
+    require(json_request(base, '/api/ext/convertibles')['revision'] == bonds['revision'], 'Preview mutated saved research')
+    calculation_evidence = {'coverage': counts, 'scenario_discount_pct': 3.0, 'scenario_is_personal': True,
+        'cashflow_basis': scenario['items'][0].get('calculation_basis'), 'preview_preserves_revision': True,
+        'samples': [{key: row.get(key) for key in ('code', 'ytm_pct', 'outstanding_amount', 'stock_pb', 'calculation_basis')}
+                    for row in calculated['items'] if row['code'][:6] in ('113052', '127068', '113042')]}
+    print(f'Installed convertible formula/public coverage: {counts}; personal preview is transient', flush=True)
     result = {'hk_watchlist': hk_watchlist, 'hk_analysis': hk_analysis, 'convertibles': {'rows': len(bonds['items']), 'as_of': bonds['as_of'],
-                              'with_double_low': computed}, 'markets': {}}
+                              'with_double_low': computed, 'calculation': calculation_evidence}, 'markets': {}}
     print(f'Installed live convertibles: {len(bonds["items"])} rows, {computed} with double-low', flush=True)
     for category in ('etf', 'lof', 'cash', 'reits', 'indices', 'bonds', 'hk'):
         print(f'Checking installed live market: {category}', flush=True)

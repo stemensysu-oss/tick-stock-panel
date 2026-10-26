@@ -12,8 +12,13 @@ export function ReferenceCard({ data }: { data?: ConvertibleReference }) {
       ['纯债价值（元/张）', formatNumber(data.pure_bond_value, 4)], ['估值数据日', data.valuation_date ?? '未知'],
       ['同日收盘价（元）', formatNumber(data.valuation_close, 3)], ['同日纯债溢价率（%）', formatNumber(data.pure_bond_premium_pct)],
       ['到期赎回价（元/张）', formatNumber(data.maturity_redemption_price)], ['评级（公开资料）', data.credit_rating ?? '未知'],
+      ['评级机构', data.rating_agency ?? '未知'],
+      ['剩余规模（亿元）', data.outstanding_amount == null ? '未知' : formatNumber(data.outstanding_amount / 100_000_000, 4)],
+      ['存续数量（张）', formatNumber(data.outstanding_units, 0)],
+      ['正股PB', formatNumber(data.stock_pb)], ['正股流通市值（亿元）', data.float_market_cap == null ? '未知' : formatNumber(data.float_market_cap / 100_000_000)],
       ['生命周期', data.lifecycle === 'terminated' ? '已终止 / 退市' : data.lifecycle === 'listed' ? '已上市' : '未确认'],
     ].map(([label, value]) => <div key={label}><dt className="text-muted">{label}</dt><dd className="mt-1.5 font-mono">{value}</dd></div>)}</dl>
+    {data.outstanding_basis && <p className="text-xs text-muted">{data.outstanding_basis}。观察时间 {data.outstanding_observed_at}；来源未提供余额统计日，不能当作历史时点数据。</p>}
     {data.coupon_text && <p className="text-xs leading-relaxed">票息：{data.coupon_text}</p>}
     {data.warnings.map(w => <p key={w} className="text-xs text-warning">{w}</p>)}
     <p className="text-[11px] text-muted">来源 {data.source} · 获取于 {data.fetched_at}；获取时间不是公告日。{url && <a href={url} target="_blank" rel="noopener noreferrer" className="ml-2 text-accent">查看原页</a>}</p>

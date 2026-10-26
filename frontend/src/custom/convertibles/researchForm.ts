@@ -6,6 +6,10 @@ export interface ClauseDraft {
   consecutive: boolean; start_date: string; end_date: string; paused_until: string; observations_complete: boolean
 }
 export interface ResearchDraft {
+  calculation_settings?: ConvertibleResearch['calculation_settings']
+  personal_rating?: string | null
+  parameter_note?: string | null
+  fund_holding_report_date?: string | null
   cash_flows: CashFlowDraft[]
   put_cash_flows: CashFlowDraft[]
   cash_flows_complete: boolean
@@ -30,6 +34,10 @@ function clauseDraft(clause: ConvertibleClause | null | undefined): ClauseDraft 
 }
 export function createResearchDraft(research?: ConvertibleResearch | null): ResearchDraft {
   return {
+    calculation_settings: research?.calculation_settings,
+    personal_rating: research?.personal_rating,
+    parameter_note: research?.parameter_note,
+    fund_holding_report_date: research?.fund_holding_report_date,
     cash_flows: (research?.cash_flows ?? []).map(flow => ({ date: flow.date, amount: String(flow.amount) })),
     put_cash_flows: (research?.put_cash_flows ?? []).map(flow => ({ date: flow.date, amount: String(flow.amount) })),
     cash_flows_complete: research?.cash_flows_complete ?? false,
@@ -103,6 +111,10 @@ export function buildResearch(draft: ResearchDraft): ConvertibleResearch {
   })
   return {
     cash_flows: cashFlows(draft.cash_flows, '到期现金流'), put_cash_flows: cashFlows(draft.put_cash_flows, '回售现金流'),
+    calculation_settings: draft.calculation_settings,
+    personal_rating: draft.personal_rating,
+    parameter_note: draft.parameter_note,
+    fund_holding_report_date: draft.fund_holding_report_date,
     cash_flows_complete: draft.cash_flows_complete, put_cash_flows_complete: draft.put_cash_flows_complete,
     price_basis: draft.price_basis || null, accrued_interest: interest,
     discount_rate_pct: optionalNumber(draft.discount_rate_pct, '纯债折现率'), risk_free_rate_pct: optionalNumber(draft.risk_free_rate_pct, '无风险利率'), dividend_yield_pct: optionalNumber(draft.dividend_yield_pct, '股息率'),

@@ -470,3 +470,27 @@ def test_invalid_restore_never_replaces_the_current_snapshot(client, invalid):
     response = client.post("/api/ext/convertibles/restore", json=payload)
     assert response.status_code == 422
     assert client.get("/api/ext/convertibles").json() == saved
+
+
+def test_formula_routes_validate_and_preview_without_mutation(client, monkeypatch):
+    from app.services import convertibles_calculation_workspace as workspace
+    from app.services.convertibles_reference import ConvertibleReferences
+    saved = save_initial_snapshot(client)
+    monkeypatch.setattr(workspace, 'references', lambda codes: ConvertibleReferences(items=[], fetched_at=AS_OF, attempts=[], warnings=[]))
+    catalog = client.get('/api/ext/convertibles/formula-catalog')
+    assert catalog.status_code == 200
+    assert len(catalog.json()['formulas']) == 15
+    preview = client.post('/api/ext/convertibles/calculated', json={
+        'expected_revision': saved['revision'], 'settings': {'formulas': {'double_low': 'bond_price + 5'}}})
+    assert preview.status_code == 200
+    assert preview.json()['items'][0]['double_low'] == 125
+    assert client.get('/api/ext/convertibles').json() == saved
+    invalid = client.put('/api/ext/convertibles/calculation-settings', json={
+        'expected_revision': saved['revision'], 'settings': {'formulas': {'double_low': '__import__("os")'}}})
+    assert invalid.status_code == 422
+    valid = client.put('/api/ext/convertibles/calculation-settings', json={
+        'expected_revision': saved['revision'], 'settings': {'formulas': {'double_low': 'bond_price + 5'}}})
+    assert valid.status_code == 200
+    assert valid.json()['calculation_settings']['formulas']['double_low'] == 'bond_price + 5'
+    assert valid.json()['items'][0]['double_low'] == saved['items'][0]['double_low']
+    assert client.post('/api/ext/convertibles/calculated', json={'expected_revision': saved['revision']}).status_code == 409

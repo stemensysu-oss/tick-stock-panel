@@ -14,6 +14,8 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.services.convertibles_calculation_config import ConvertibleCalculationSettings
+
 MAX_ROWS = 2000
 _CODE = re.compile(r"^[0-9]{6}(?:\.(?:SH|SZ|BJ))?$")
 _DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
@@ -139,6 +141,21 @@ class ConvertibleObservation(BaseModel):
 
 class ConvertibleResearch(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+    calculation_settings: ConvertibleCalculationSettings | None = None
+    personal_rating: str | None = Field(default=None, max_length=30)
+    parameter_note: str | None = Field(default=None, max_length=500)
+    fund_holding_report_date: str | None = None
+
+    _personal_text = field_validator('personal_rating')(validate_text)
+    @field_validator('parameter_note')
+    @classmethod
+    def parameter_text(cls, value):
+        if value is not None and any(ord(char) < 32 and char not in '\n\r\t' for char in value):
+            raise ValueError('参数说明含有非法控制字符')
+        return value
+
+    _personal_holding_date = field_validator('fund_holding_report_date')(
+        lambda value: validate_date(value) if value is not None else None)
     cash_flows: list[DatedCashFlow] = Field(default_factory=list, max_length=30)
     put_cash_flows: list[DatedCashFlow] = Field(default_factory=list, max_length=30)
     cash_flows_complete: bool = False
@@ -259,6 +276,9 @@ class ConvertibleInput(BaseModel):
 
 
 class ConvertibleItem(ConvertibleInput):
+    calculation_details: dict = Field(default_factory=dict)
+    calculation_basis: str | None = None
+    personal_rating: str | None = None
     conversion_value: float | None = None
     conversion_premium_pct: float | None = None
     double_low: float | None = None
@@ -299,6 +319,7 @@ class ConvertibleSnapshot(BaseModel):
     updated_at: str | None = None
     source: str = Field(default="用户导入", min_length=1, max_length=100)
     items: list[ConvertibleItem] = Field(default_factory=list, max_length=MAX_ROWS)
+    calculation_settings: ConvertibleCalculationSettings = Field(default_factory=ConvertibleCalculationSettings)
 
     @field_validator("schema_version", mode="before")
     @classmethod

@@ -2460,7 +2460,35 @@ export interface ConvertibleProgress {
   as_of: string | null
   note: string
 }
+export interface ConvertibleCalculationSettings {
+  enabled: boolean
+  formulas: Record<string, string>
+  parameters: Record<string, number>
+  price_basis?: 'auto' | 'full' | 'clean' | null
+  cashflow_source?: 'auto' | 'manual' | 'contract' | null
+}
+export interface ConvertibleCalculationDetail {
+  formula: string; label: string; unit: string; custom: boolean
+  inputs: Record<string, number | null>; result: number | null
+  status: 'ok' | 'missing' | 'error'; missing: string[]; error?: string | null
+  source: string; cashflow_basis?: string | null
+}
+export interface ConvertibleFormulaCatalog {
+  formulas: { id: string; label: string; unit: string; formula: string }[]
+  inputs: { id: string; label: string; unit: string; editable: boolean }[]
+  functions: string[]; conventions: string[]
+  function_docs: { name: string; formula: string; note: string }[]
+}
+export interface ConvertibleCalculationSnapshot {
+  revision: string; as_of: string | null; calculation_settings: ConvertibleCalculationSettings
+  items: ConvertibleItem[]; references: ConvertibleReference[]
+  attempts: ConvertibleReferences['attempts']; warnings: string[]; reference_status: string
+}
 export interface ConvertibleResearch {
+  calculation_settings?: ConvertibleCalculationSettings | null
+  personal_rating?: string | null
+  parameter_note?: string | null
+  fund_holding_report_date?: string | null
   cash_flows: ConvertibleCashFlow[]
   put_cash_flows: ConvertibleCashFlow[]
   cash_flows_complete: boolean
@@ -2477,6 +2505,9 @@ export interface ConvertibleResearch {
   observations: { date: string; stock_close: number; conversion_price: number }[]
 }
 export interface ConvertibleItem {
+  calculation_details?: Record<string, ConvertibleCalculationDetail>
+  calculation_basis?: string | null
+  personal_rating?: string | null
   code: string
   name: string
   stock_code: string | null
@@ -2542,6 +2573,7 @@ export interface ConvertibleItem {
 }
 
 export interface ConvertibleDataset {
+  calculation_settings?: ConvertibleCalculationSettings
   schema_version?: number
   revision: string
   as_of: string | null
@@ -2550,6 +2582,20 @@ export interface ConvertibleDataset {
   items: ConvertibleItem[]
 }
 export interface ConvertibleReference {
+  stock_code?: string | null
+  interest_start_date?: string | null
+  rating_agency?: string | null
+  outstanding_units?: number | null
+  outstanding_amount?: number | null
+  outstanding_observed_at?: string | null
+  outstanding_as_of?: string | null
+  outstanding_basis?: string | null
+  quantity_validation_price?: number | null
+  quantity_market_value?: number | null
+  stock_pb?: number | null
+  float_market_cap?: number | null
+  stock_metrics_quote_at?: string | null
+  cashflow_plan?: { status: string; cash_flows: ConvertibleCashFlow[]; reasons: string[]; basis: string; warnings: string[] }
   code: string
   name: string | null
   source: string
@@ -2712,6 +2758,10 @@ export const api = {
   convertibleDisclosures: (code: string) => request<ConvertibleDisclosures>(`/api/ext/convertibles/${encodeURIComponent(code)}/disclosures`, { quiet: true, timeoutMs: 60_000 }),
   convertibleReferences: (codes: string[]) => request<ConvertibleReferences>('/api/ext/convertibles/references', { method: 'POST', body: JSON.stringify({ codes }), quiet: true, timeoutMs: 180_000 }),
   convertibles: () => request<ConvertibleDataset>('/api/ext/convertibles', { quiet: true }),
+  convertibleFormulaCatalog: () => request<ConvertibleFormulaCatalog>('/api/ext/convertibles/formula-catalog', { quiet: true }),
+  calculateConvertibles: (expected_revision: string, settings?: ConvertibleCalculationSettings) => request<ConvertibleCalculationSnapshot>('/api/ext/convertibles/calculated', { method: 'POST', body: JSON.stringify({ expected_revision, settings }), quiet: true, timeoutMs: 180_000 }),
+  saveConvertibleCalculationSettings: (expected_revision: string, settings: ConvertibleCalculationSettings) => request<ConvertibleDataset>('/api/ext/convertibles/calculation-settings', { method: 'PUT', body: JSON.stringify({ expected_revision, settings }), quiet: true }),
+  previewConvertibleCalculation: (code: string, expected_revision: string, research: ConvertibleResearch) => request<ConvertibleCalculationSnapshot>(`/api/ext/convertibles/${encodeURIComponent(code)}/calculation-preview`, { method: 'POST', body: JSON.stringify({ expected_revision, research }), quiet: true, timeoutMs: 180_000 }),
   convertibleSourceStatus: () => request<ConvertibleSourceStatus>('/api/ext/convertibles/status', { quiet: true }),
   previewConvertibleRestore: (input: { snapshot: ConvertibleDataset }) =>
     request<ConvertiblePreview>('/api/ext/convertibles/restore/preview', {

@@ -12,6 +12,7 @@ from functools import lru_cache
 from pydantic import BaseModel, Field
 
 from app.data_providers.research_market import PUBLIC, SH, PublicHTTP, number
+from app.services.convertibles_cashflows import contract_cash_flows
 from app.services.convertibles_disclosures import _date
 from app.services.convertibles_sources import ConvertibleDataError, normalize_symbol
 
@@ -30,6 +31,9 @@ class ConvertibleReference(BaseModel):
     conversion_start_date: str | None = None
     listing_date: str | None = None
     lifecycle: str = 'unknown'
+    stock_code: str | None = None
+    interest_start_date: str | None = None
+    rating_agency: str | None = None
     credit_rating: str | None = None
     coupon_text: str | None = None
     call_clause_text: str | None = None
@@ -42,6 +46,17 @@ class ConvertibleReference(BaseModel):
     call_trigger_price: float | None = None
     put_trigger_price: float | None = None
     quote_at: str | None = None
+    outstanding_units: float | None = None
+    outstanding_amount: float | None = None
+    outstanding_observed_at: str | None = None
+    outstanding_as_of: str | None = None
+    outstanding_basis: str | None = None
+    quantity_validation_price: float | None = None
+    quantity_market_value: float | None = None
+    stock_pb: float | None = None
+    float_market_cap: float | None = None
+    stock_metrics_quote_at: str | None = None
+    cashflow_plan: dict = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -96,6 +111,7 @@ class ConvertibleReferenceProvider:
         warnings = ['公开纯债价值为供应商模型参考，折现曲线与净价/全价口径未披露，不是保本价格；不会替代手工试算。',
                     '条款、估值日期、报价日期分别展示；获取时间不是公告日。已退市债券的结束日不当作原合同到期日。']
         succeeded = False
+        term_rows = {}
         # Bounded batches; no one-request-per-bond loop or authenticated scraping.
         for offset in range(0, len(symbols), 100):
             chunk = symbols[offset:offset + 100]
@@ -123,10 +139,13 @@ class ConvertibleReferenceProvider:
                         maturity_date=_maturity(row, life, end), source_end_date=end,
                         listing_date=listed, conversion_end_date=_date(row.get('TRANSFER_END_DATE')),
                         conversion_start_date=_date(row.get('TRANSFER_START_DATE')),
+                        stock_code=normalize_symbol(str(row['CONVERT_STOCK_CODE']), kind='stock') if row.get('CONVERT_STOCK_CODE') else None,
+                        interest_start_date=_date(row.get('VALUE_DATE')), rating_agency=row.get('PARTY_NAME'),
                         credit_rating=row.get('RATING'), coupon_text=row.get('INTEREST_RATE_EXPLAIN'),
                         call_clause_text=row.get('REDEEM_CLAUSE'), put_clause_text=row.get('RESALE_CLAUSE'))
                 for s, values in parsed.items():
                     found[s] = found[s].model_copy(update=values)
+                term_rows.update({row['SECUCODE']: row for row in rows if row['SECUCODE'] in parsed})
                 attempts.append({'provider': PUBLIC, 'dataset': 'terms', 'status': 'success', 'rows': len(parsed)})
                 succeeded |= bool(parsed)
             except Exception:  # noqa: BLE001 -- keep supplier errors private; independent valuation still useful
@@ -176,7 +195,7 @@ class ConvertibleReferenceProvider:
                 chunk = symbols[offset:offset + 100]
                 raw = self.http.get('https://push2.eastmoney.com/api/qt/ulist.np/get', {
                     'secids': ','.join(f'{1 if s.endswith(".SH") else 0}.{s[:6]}' for s in chunk),
-                    'fltt': 2, 'invt': 2, 'fields': 'f12,f13,f124,f239,f240,f241'}).json()
+                    'fltt': 2, 'invt': 2, 'fields': 'f2,f12,f13,f20,f21,f38,f39,f124,f239,f240,f241'}).json()
                 rows = (raw.get('data') or {}).get('diff')
                 if not isinstance(rows, list):
                     raise ValueError('Missing quote reference')
@@ -192,6 +211,14 @@ class ConvertibleReferenceProvider:
                         put_trigger_price=number(row.get('f239'), positive=True),
                         call_trigger_price=number(row.get('f240'), positive=True),
                         maturity_redemption_price=number(row.get('f241'), positive=True))
+                    quantity = number(row.get('f38'))
+                    cap, price = number(row.get('f20')), number(row.get('f2'), positive=True)
+                    if (quantity is not None and quantity >= 0 and quantity.is_integer() and price is not None
+                            and cap is not None and cap >= 0 and abs(cap - quantity * price) <= max(2, abs(cap) * 0.00001)):
+                        values[s].update(outstanding_units=quantity, outstanding_amount=quantity * 100,
+                            outstanding_observed_at=at, outstanding_as_of=None,
+                            quantity_validation_price=price, quantity_market_value=cap,
+                            outstanding_basis='公开转债存续张数×每张面值100元；数量统计日未披露，以获取时间标注')
                 for s, v in values.items():
                     found[s] = found[s].model_copy(update=v)
                 count += len(values)
@@ -199,6 +226,43 @@ class ConvertibleReferenceProvider:
         except Exception:  # noqa: BLE001
             attempts.append({'provider': PUBLIC, 'dataset': 'reference_prices', 'status': 'failed'})
             warnings.append('公开触发价及到期赎回金额暂缺；不会默认采用130%、70%或100元。')
+        # Underlying metrics are a separate capability; never replace primary
+        # prices or infer the stock binding from the bond's name/code.
+        stocks = sorted({i.stock_code for i in found.values() if i.stock_code})
+        for p in ('tickflow', 'fuyao'):
+            attempts.append({'provider': p, 'dataset': 'cb_underlying_reference_metrics', 'status': 'unsupported'})
+        if stocks:
+            try:
+                stock_values = {}
+                for offset in range(0, len(stocks), 100):
+                    chunk = stocks[offset:offset + 100]
+                    raw = self.http.get('https://push2.eastmoney.com/api/qt/ulist.np/get', {
+                        'secids': ','.join(f'{1 if s.endswith(".SH") else 0}.{s[:6]}' for s in chunk),
+                        'fltt': 2, 'invt': 2, 'fields': 'f12,f13,f23,f21,f124'}).json()
+                    rows = (raw.get('data') or {}).get('diff')
+                    if not isinstance(rows, list):
+                        raise ValueError('Missing stock reference metrics')
+                    for row in rows:
+                        s = f'{row.get("f12")}.{"SH" if row.get("f13") == 1 else "SZ"}'
+                        if s not in chunk or s in stock_values or row.get('f13') not in (0, 1):
+                            raise ValueError('Stock reference identity mismatch')
+                        stock_values[s] = dict(stock_pb=number(row.get('f23')),
+                            float_market_cap=number(row.get('f21'), positive=True),
+                            stock_metrics_quote_at=quote_time(row.get('f124')))
+                for item in found.values():
+                    if item.stock_code in stock_values:
+                        for key, value in stock_values[item.stock_code].items():
+                            setattr(item, key, value)
+                attempts.append({'provider': PUBLIC, 'dataset': 'cb_underlying_reference_metrics',
+                                 'status': 'success', 'rows': len(stock_values)})
+            except Exception:  # noqa: BLE001 -- raw source errors never cross the boundary
+                attempts.append({'provider': PUBLIC, 'dataset': 'cb_underlying_reference_metrics', 'status': 'failed'})
+                warnings.append('部分正股PB与流通市值未取得；保留原行情，不用未知数代入占比。')
+        for item in found.values():
+            item.cashflow_plan = contract_cash_flows(term_rows.get(item.code, {}), item.maturity_date,
+                item.maturity_redemption_price, item.lifecycle)
+            if item.outstanding_amount is None:
+                item.warnings.append('缺少通过单位一致性检查的存续张数，未将发行规模当作剩余规模。')
         if not succeeded:
             raise ConvertibleDataError(502, '公开条款与估值未返回有效资料，已保存的行情及研究不受影响，请重试')
         for item in found.values():

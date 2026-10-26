@@ -44,8 +44,8 @@ export function formatColumn(item: ConvertibleItem, column: ConvertibleColumn): 
   if (value == null || value === '') return '—'
   return typeof value === 'number' ? formatNumber(value / (column.divisor ?? 1), column.digits ?? 2) : String(value)
 }
-export const BUTTON = 'inline-flex items-center justify-center gap-1.5 rounded-btn border border-border px-3 py-2 text-xs font-medium transition-colors hover:bg-elevated disabled:cursor-not-allowed disabled:opacity-40'
-export const INPUT = 'h-9 min-w-0 w-full rounded-input border border-border bg-base px-3 text-xs outline-none focus:border-accent disabled:opacity-50'
+export const BUTTON = 'inline-flex items-center justify-center gap-1.5 rounded-btn border border-border px-2 py-1.5 text-xs font-medium transition-colors hover:bg-elevated disabled:cursor-not-allowed disabled:opacity-40'
+export const INPUT = 'h-7 min-w-0 w-full rounded-input border border-border bg-base px-3 text-xs outline-none focus:border-accent disabled:opacity-50'
 export function safeSourceUrl(value: string | null | undefined): string | null {
   if (!value) return null
   try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) ? url.href : null } catch { return null }
