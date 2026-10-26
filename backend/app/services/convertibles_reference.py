@@ -11,12 +11,36 @@ from functools import lru_cache
 
 from pydantic import BaseModel, Field
 
-from app.data_providers.research_market import PUBLIC, SH, PublicHTTP, number
-from app.services.convertibles_cashflows import contract_cash_flows
+from app.data_providers.research_market import PUBLIC, SH, PublicHTTP, number, quote_time
+from app.services.convertibles_cashflows import contract_cash_flows, contract_redemption_price
 from app.services.convertibles_disclosures import _date
 from app.services.convertibles_sources import ConvertibleDataError, normalize_symbol
 
 URL = 'https://datacenter-web.eastmoney.com/api/data/v1/get'
+QUOTE_COLUMNS = ','.join(f'{field}~{market}~{code}~{alias}' for field, market, code, alias in (
+    ('f2', '10', 'SECURITY_CODE', 'CB_PRICE'), ('f38', '10', 'SECURITY_CODE', 'CB_UNITS'),
+    ('f20', '10', 'SECURITY_CODE', 'CB_CAP'), ('f124', '10', 'SECURITY_CODE', 'CB_STAMP'),
+    ('f239', '10', 'SECURITY_CODE', 'CB_PUT'), ('f240', '10', 'SECURITY_CODE', 'CB_CALL'),
+    ('f23', '01', 'CONVERT_STOCK_CODE', 'STOCK_PB'),
+    ('f21', '01', 'CONVERT_STOCK_CODE', 'STOCK_FLOAT_CAP'),
+    ('f124', '01', 'CONVERT_STOCK_CODE', 'STOCK_STAMP')))
+
+
+def _time(value):
+    try:
+        return quote_time(value) if value is not None else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _quantity_values(quantity, cap, price, at):
+    quantity, cap, price = number(quantity), number(cap), number(price, positive=True)
+    if (quantity is None or quantity < 0 or not quantity.is_integer() or price is None or cap is None
+            or cap < 0 or abs(cap - quantity * price) > max(2, abs(cap) * 0.00001)):
+        return {}
+    return dict(outstanding_units=quantity, outstanding_amount=quantity * 100,
+        outstanding_observed_at=at, outstanding_as_of=None, quantity_validation_price=price, quantity_market_value=cap,
+        outstanding_basis='公开转债存续张数×每张面值100元；数量统计日未披露，以获取时间标注')
 
 
 class ConvertibleReference(BaseModel):
@@ -118,7 +142,8 @@ class ConvertibleReferenceProvider:
             codes = ','.join(f'"{s[:6]}"' for s in chunk)
             try:
                 rows = _rows(self.http.get(URL, {'reportName': 'RPT_BOND_CB_LIST', 'columns': 'ALL',
-                    'filter': f'(SECURITY_CODE in ({codes}))', 'pageSize': 100, 'pageNumber': 1}).json(), complete=True)
+                    'filter': f'(SECURITY_CODE in ({codes}))', 'pageSize': 100, 'pageNumber': 1,
+                    'quoteColumns': QUOTE_COLUMNS, 'quoteType': '0'}).json(), complete=True)
                 seen = set()
                 for row in rows:
                     s = row.get('SECUCODE')
@@ -142,7 +167,15 @@ class ConvertibleReferenceProvider:
                         stock_code=normalize_symbol(str(row['CONVERT_STOCK_CODE']), kind='stock') if row.get('CONVERT_STOCK_CODE') else None,
                         interest_start_date=_date(row.get('VALUE_DATE')), rating_agency=row.get('PARTY_NAME'),
                         credit_rating=row.get('RATING'), coupon_text=row.get('INTEREST_RATE_EXPLAIN'),
-                        call_clause_text=row.get('REDEEM_CLAUSE'), put_clause_text=row.get('RESALE_CLAUSE'))
+                        call_clause_text=row.get('REDEEM_CLAUSE'), put_clause_text=row.get('RESALE_CLAUSE'),
+                        maturity_redemption_price=contract_redemption_price(row),
+                        quote_at=_time(row.get('CB_STAMP')),
+                        put_trigger_price=number(row.get('CB_PUT'), positive=True),
+                        call_trigger_price=number(row.get('CB_CALL'), positive=True),
+                        stock_pb=number(row.get('STOCK_PB')),
+                        float_market_cap=number(row.get('STOCK_FLOAT_CAP'), positive=True),
+                        stock_metrics_quote_at=_time(row.get('STOCK_STAMP')),
+                        **_quantity_values(row.get('CB_UNITS'), row.get('CB_CAP'), row.get('CB_PRICE'), at))
                 for s, values in parsed.items():
                     found[s] = found[s].model_copy(update=values)
                 term_rows.update({row['SECUCODE']: row for row in rows if row['SECUCODE'] in parsed})
@@ -188,7 +221,6 @@ class ConvertibleReferenceProvider:
             attempts.append({'provider': PUBLIC, 'dataset': 'valuation', 'status': 'failed'})
             warnings.append('本次未取得有效的带日期纯债估值，可继续查看条款及手工试算。')
         # Optional quote-derived trigger/maturity redemption amounts with own time.
-        from app.data_providers.research_market import quote_time
         try:
             count = 0
             for offset in range(0, len(symbols), 100):
@@ -208,29 +240,25 @@ class ConvertibleReferenceProvider:
                     if found[s].lifecycle == 'terminated':
                         continue
                     values[s] = dict(quote_at=quote_time(row.get('f124')),
-                        put_trigger_price=number(row.get('f239'), positive=True),
-                        call_trigger_price=number(row.get('f240'), positive=True),
-                        maturity_redemption_price=number(row.get('f241'), positive=True))
-                    quantity = number(row.get('f38'))
-                    cap, price = number(row.get('f20')), number(row.get('f2'), positive=True)
-                    if (quantity is not None and quantity >= 0 and quantity.is_integer() and price is not None
-                            and cap is not None and cap >= 0 and abs(cap - quantity * price) <= max(2, abs(cap) * 0.00001)):
-                        values[s].update(outstanding_units=quantity, outstanding_amount=quantity * 100,
-                            outstanding_observed_at=at, outstanding_as_of=None,
-                            quantity_validation_price=price, quantity_market_value=cap,
-                            outstanding_basis='公开转债存续张数×每张面值100元；数量统计日未披露，以获取时间标注')
+                        put_trigger_price=number(row.get('f239'), positive=True) or found[s].put_trigger_price,
+                        call_trigger_price=number(row.get('f240'), positive=True) or found[s].call_trigger_price,
+                        maturity_redemption_price=number(row.get('f241'), positive=True) or found[s].maturity_redemption_price)
+                    values[s].update(_quantity_values(row.get('f38'), row.get('f20'), row.get('f2'), at))
                 for s, v in values.items():
                     found[s] = found[s].model_copy(update=v)
                 count += len(values)
             attempts.append({'provider': PUBLIC, 'dataset': 'reference_prices', 'status': 'success', 'rows': count})
         except Exception:  # noqa: BLE001
             attempts.append({'provider': PUBLIC, 'dataset': 'reference_prices', 'status': 'failed'})
-            warnings.append('公开触发价及到期赎回金额暂缺；不会默认采用130%、70%或100元。')
+            warnings.append('直接报价参考入口暂不可用；保留已取得的数据中心字段和条款明确金额，不默认采用130%、70%或100元。')
         # Underlying metrics are a separate capability; never replace primary
         # prices or infer the stock binding from the bond's name/code.
-        stocks = sorted({i.stock_code for i in found.values() if i.stock_code})
+        stocks = sorted({i.stock_code for i in found.values() if i.stock_code and (i.stock_pb is None or i.float_market_cap is None)})
+        enriched = sum(i.stock_pb is not None and i.float_market_cap is not None for i in found.values())
         for p in ('tickflow', 'fuyao'):
             attempts.append({'provider': p, 'dataset': 'cb_underlying_reference_metrics', 'status': 'unsupported'})
+        if enriched:
+            attempts.append({'provider': PUBLIC, 'dataset': 'cb_underlying_metrics_datacenter', 'status': 'success', 'rows': enriched})
         if stocks:
             try:
                 stock_values = {}
@@ -252,7 +280,8 @@ class ConvertibleReferenceProvider:
                 for item in found.values():
                     if item.stock_code in stock_values:
                         for key, value in stock_values[item.stock_code].items():
-                            setattr(item, key, value)
+                            if value is not None:
+                                setattr(item, key, value)
                 attempts.append({'provider': PUBLIC, 'dataset': 'cb_underlying_reference_metrics',
                                  'status': 'success', 'rows': len(stock_values)})
             except Exception:  # noqa: BLE001 -- raw source errors never cross the boundary

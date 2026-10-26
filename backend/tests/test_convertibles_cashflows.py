@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.convertibles_cashflows import contract_cash_flows
+from app.services.convertibles_cashflows import contract_cash_flows, contract_redemption_price
 
 
 def terms():
@@ -47,3 +47,8 @@ def test_numeric_years_and_explicit_source_amount_are_supported():
 def test_explicit_final_interest_year_wording_is_not_treated_as_missing():
     row = {**terms(), "REDEEM_CLAUSE": "到期以票面面值的109%(含最后一期计息年度利息)赎回"}
     assert contract_cash_flows(row, "2027-12-27", 109, "listed")["status"] == "available"
+
+
+@pytest.mark.parametrize('text', ['按面值的130%赎回', '到期赎回按面值赎回', '到期赎回按面值的109%（含最后一期利息）和面值的110%'])
+def test_redemption_extraction_requires_one_unambiguous_explicit_maturity_term(text):
+    assert contract_redemption_price({'REDEEM_CLAUSE': text}) is None

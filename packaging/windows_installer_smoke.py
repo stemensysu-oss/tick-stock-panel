@@ -243,6 +243,7 @@ def check_live_api(base: str) -> dict:
     calculated = json_request(base, '/api/ext/convertibles/calculated', body={'expected_revision': bonds['revision']}, timeout=180)
     counts = {key: sum(row.get(key) is not None for row in calculated['items'])
               for key in ('ytm_pct', 'outstanding_amount', 'stock_pb', 'debt_to_float_cap_pct')}
+    print(f'Installed convertible calculation coverage: {counts}', flush=True)
     require(all(count > 100 for count in counts.values()), 'Convertible calculated public fields lack usable coverage')
     require(all(row.get('calculation_details', {}).get('ytm_pct', {}).get('formula') == 'IRR(full_price, day_count_basis) * 100'
                 for row in calculated['items']), 'Formula provenance missing')

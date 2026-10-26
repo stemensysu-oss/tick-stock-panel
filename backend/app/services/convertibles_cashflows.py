@@ -13,6 +13,18 @@ _CHINESE = {char: index for index, char in enumerate('一二三四五六七八�
 _COUPON = re.compile(r'第([一二三四五六七八九十]|[1-9]\d?)年(?:的)?(?:票面利率|利率)?(?:为|是|[:：])?\s*([0-9]+(?:\.[0-9]+)?)\s*[%％]')
 
 
+def contract_redemption_price(row):
+    """An explicit maturity term, never an inferred face/default payoff."""
+    text = re.split(r'有条件赎回', str(row.get('REDEEM_CLAUSE') or ''))[0]
+    if '到期赎回' not in text or not re.search(r'含(?:最后一期(?:计息年度|年度|票面)?|最后一年)利息', text):
+        return None
+    matches = re.findall(r'(?:票面面值|面值)(?:的)?\s*([0-9]+(?:\.[0-9]+)?)\s*[%％]', text)
+    if len(matches) != 1:
+        return None
+    value = float(matches[0])
+    return value if 0 < value < 1000 else None
+
+
 def contract_cash_flows(row, maturity_date, redemption_price, lifecycle):
     result = {'status': 'missing', 'cash_flows': [], 'reasons': [],
               'basis': '合同计划现金流（税前、每张100元；假设不转股且无提前赎回）',

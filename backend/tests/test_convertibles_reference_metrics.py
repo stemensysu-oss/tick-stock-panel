@@ -49,3 +49,25 @@ def test_quantity_and_market_value_mismatch_keeps_scale_unknown_but_other_fields
     assert r.outstanding_amount is None and r.outstanding_units is None
     assert r.stock_pb == -1.5 and r.cashflow_plan['status'] == 'available'
     assert any('发行规模' in w for w in r.warnings)
+
+
+def test_datacenter_enrichment_keeps_calculations_available_when_direct_quote_host_is_unavailable():
+    class DataCenterOnly(HTTP):
+        def get(self, url, params):
+            if 'ulist' in url:
+                raise ValueError('direct quote host unavailable')
+            response = super().get(url, params)
+            if 'reportName' in params:
+                assert 'f38~10~SECURITY_CODE~CB_UNITS' in params['quoteColumns']
+                data = response.json()
+                data['result']['data'][0].update(CB_PRICE=112.0, CB_UNITS=10000000,
+                    CB_CAP=1120000000, CB_STAMP=int(datetime(2026, 10, 23, 15, tzinfo=SH).timestamp()),
+                    STOCK_PB=1.2, STOCK_FLOAT_CAP=5000000000, STOCK_STAMP=int(datetime(2026, 10, 23, 15, tzinfo=SH).timestamp()))
+                return httpx.Response(200, json=data)
+            return response
+    result = ConvertibleReferenceProvider(DataCenterOnly()).fetch(['113052'], today='2026-10-26')
+    r = result.items[0]
+    assert r.outstanding_amount == 1000000000 and r.stock_pb == 1.2
+    assert r.maturity_redemption_price == 109 and r.cashflow_plan['status'] == 'available'
+    assert any(a['dataset'] == 'reference_prices' and a['status'] == 'failed' for a in result.attempts)
+    assert any(a['dataset'] == 'cb_underlying_metrics_datacenter' and a['status'] == 'success' for a in result.attempts)
