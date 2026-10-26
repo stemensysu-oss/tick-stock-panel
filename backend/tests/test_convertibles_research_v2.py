@@ -36,10 +36,10 @@ def test_extended_csv_keeps_units_negative_pb_and_turnover_above_100():
 def test_research_update_is_atomic_and_old_schema_roundtrip_is_supported(tmp_path):
     service = ConvertibleService(tmp_path)
     saved = service.import_csv(CSV, "2026-01-01", expected_revision="0")
-    raw = json.loads(service.path.read_text())
+    raw = json.loads(service.path.read_text(encoding='utf-8'))
     old_fields = {"code", "name", "bond_price", "stock_price", "conversion_price", "maturity_date"}
     raw["items"] = [{k: v for k, v in raw["items"][0].items() if k in old_fields}]
-    service.path.write_text(json.dumps(raw))
+    service.path.write_text(json.dumps(raw), encoding='utf-8')
     current = service.snapshot()
     assert current.items[0].research is None
     updated = service.update_research("110001", ConvertibleResearch(
