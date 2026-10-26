@@ -32,11 +32,17 @@ def request_exit(child, method, window):
             Quartz.CGEventSetFlags(event, Quartz.kCGEventFlagMaskCommand)
             Quartz.CGEventPostToPid(child.pid, event)
     elif method == 'window_close':
+        foreground = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+        if foreground is None or foreground.processIdentifier() != child.pid:
+            raise RuntimeError('Refusing to click: the CI-owned app is not foreground')
         bounds = window['kCGWindowBounds']
         position = (bounds['X'] + 14, bounds['Y'] + 14)
-        for event_type in (Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
+        # Title-bar traffic lights are dispatched by WindowServer. PostToPid
+        # bypasses its hit testing and does not activate the native close button.
+        for event_type in (Quartz.kCGEventMouseMoved, Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
             event = Quartz.CGEventCreateMouseEvent(None, event_type, position, Quartz.kCGMouseButtonLeft)
-            Quartz.CGEventPostToPid(child.pid, event)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+            time.sleep(0.1)
     else:
         raise ValueError(method)
 
