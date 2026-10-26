@@ -21,3 +21,5 @@
 前端常用列增加纯债价值、口径、估值日期、剩余年限和到期赎回价；原默认列自动升级，自定义列、自选和排除保留。显示列数量按实际列计算。纯债CSV导出自动附带口径及日期；JSON备份仍为原人工研究快照，联网参考不写入、不给旧研究加上虚假的人工确认。详情分别显示联网参考与已保存的试算。
 
 来源定位：[AKShare源码](https://github.com/akfamily/akshare/blob/main/akshare/bond/bond_zh_cov.py)、[东方财富兴业转债资料](https://data.eastmoney.com/kzz/detail/113052.html)、[上交所兴业转债概况](https://www.sse.com.cn/assortment/bonds/list/bondinfo/basic/index.shtml?BOND_CODE=113052&BOND_TYPE=%E5%85%A8%E9%83%A8)。未引入AKShare运行依赖。云端安装验证包含113052、127068带日期估值、到期日与113063退市防误用，测试使用公开源，不使用个人付费API密钥。
+
+界面按用户提供集思录截图调整为紧凑单行表：取消名称下第二行状态，状态与全名移至悬停说明；数字列78px、代码108px、名称100px、日期98px（均随用户字号等比例扩展），单元格上下6px、左右6px。排序/自选/对比保持可操作，代码名称固定；强赎达标保留名称提示色。对比/条款表也缩小单元格留白。实际行高随字体计算，不固定裁切。
