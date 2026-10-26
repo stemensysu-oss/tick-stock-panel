@@ -44,7 +44,6 @@ def saved_state(base):
     preferences = json_request(base, '/api/settings/preferences')
     state = {
         'convertibles': json_request(base, '/api/ext/convertibles'),
-        'funds': json_request(base, '/api/ext/funds'),
         'watchlist': sorted(row['symbol'] for row in json_request(base, '/api/watchlist')['symbols']),
         'typography': {key: preferences.get(key) for key in ('content_font_size', 'content_font_family')},
     }
