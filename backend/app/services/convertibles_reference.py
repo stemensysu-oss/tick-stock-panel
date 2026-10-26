@@ -62,6 +62,22 @@ def _rows(payload, *, complete=False):
     return rows
 
 
+def _maturity(row, lifecycle, end):
+    # A future EXPIRE_DATE can already have been changed for a pending early
+    # redemption. Check the stated original integral term against VALUE_DATE;
+    # use the source date only when coherent, never manufacture an anniversary.
+    start = _date(row.get('VALUE_DATE'))
+    years = number(row.get('BOND_EXPIRE'), positive=True)
+    if lifecycle != 'listed' or not start or not end or years is None or not years.is_integer() or years > 10:
+        return None
+    start = date.fromisoformat(start)
+    try:
+        anniversary = start.replace(year=start.year + int(years))
+    except ValueError:  # February 29: comparison only, not an invented payment date.
+        anniversary = start.replace(year=start.year + int(years), day=28)
+    return end if abs((date.fromisoformat(end) - anniversary).days) <= 7 else None
+
+
 class ConvertibleReferenceProvider:
     def __init__(self, http=None):
         self.http = http or PublicHTTP()
@@ -104,7 +120,7 @@ class ConvertibleReferenceProvider:
                     # EXPIRE_DATE has been observed rewritten on early redemption.
                     # Only currently listed, future dates are eligible references.
                     parsed[s] = dict(name=row.get('SECURITY_NAME_ABBR'), lifecycle=life,
-                        maturity_date=end if life == 'listed' else None, source_end_date=end,
+                        maturity_date=_maturity(row, life, end), source_end_date=end,
                         listing_date=listed, conversion_end_date=_date(row.get('TRANSFER_END_DATE')),
                         conversion_start_date=_date(row.get('TRANSFER_START_DATE')),
                         credit_rating=row.get('RATING'), coupon_text=row.get('INTEREST_RATE_EXPLAIN'),

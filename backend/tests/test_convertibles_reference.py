@@ -17,7 +17,8 @@ class HTTP:
             if not self.terms:
                 raise RuntimeError('private supplier details')
             rows = [{'SECURITY_CODE': '113052', 'SECUCODE': '113052.SH', 'SECURITY_NAME_ABBR': '合成样本',
-                     'PAR_VALUE': 100, 'EXPIRE_DATE': '2027-12-27 00:00:00', 'LISTING_DATE': '2022-01-14 00:00:00',
+                     'PAR_VALUE': 100, 'VALUE_DATE': '2021-12-27 00:00:00', 'BOND_EXPIRE': '6',
+                     'EXPIRE_DATE': '2027-12-27 00:00:00', 'LISTING_DATE': '2022-01-14 00:00:00',
                      'DELIST_DATE': '2024-02-23 00:00:00' if self.terminated else None, 'RATING': 'AAA'}]
         elif params.get('type'):
             rows = [{'DATE': '2026-10-23 00:00:00', 'ZCODE': '113052',
@@ -53,6 +54,15 @@ def test_terminated_end_date_is_not_original_maturity_or_current_valuation():
     assert item.lifecycle == 'terminated'
     assert item.maturity_date is None and item.pure_bond_value is None
     assert item.source_end_date == '2027-12-27'
+
+
+def test_future_early_redemption_end_is_not_original_maturity():
+    from app.services.convertibles_reference import _maturity
+    # Still listed, scheduled termination next month, original six-year term.
+    row = {'VALUE_DATE': '2021-12-27 00:00:00', 'BOND_EXPIRE': '6'}
+    assert _maturity(row, 'listed', '2026-11-20') is None
+    assert _maturity({**row, 'BOND_EXPIRE': '4.9'}, 'listed', '2026-11-20') is None
+    assert _maturity({}, 'listed', '2027-12-27') is None
 
 
 def test_wrong_security_valuation_rejected_while_terms_survive():
