@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type ConvertibleCalculationSettings, type ConvertibleItem, type ConvertibleReference } from '@/lib/api'
+import { QK } from '@/lib/queryKeys'
 import { INPUT, formatNumber } from './columns'
 
 export const emptySettings = (): ConvertibleCalculationSettings => ({ enabled: true, formulas: {}, parameters: {} })
@@ -10,7 +11,7 @@ export function FormulaEditor({ value, onChange, item, reference, inherited }: {
   value: ConvertibleCalculationSettings; onChange: (next: ConvertibleCalculationSettings) => void
   item?: ConvertibleItem; reference?: ConvertibleReference; inherited?: ConvertibleCalculationSettings
 }) {
-  const catalog = useQuery({ queryKey: ['convertible-formula-catalog'], queryFn: api.convertibleFormulaCatalog, staleTime: Infinity, retry: false })
+  const catalog = useQuery({ queryKey: QK.convertibleFormulaCatalog, queryFn: api.convertibleFormulaCatalog, staleTime: Infinity, retry: false })
   const [metric, setMetric] = useState('pure_bond_value')
   const definition = catalog.data?.formulas.find(row => row.id === metric)
   const detail = item?.calculation_details?.[metric]

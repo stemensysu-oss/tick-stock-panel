@@ -46,7 +46,7 @@ export function ConvertiblesPage() {
   const [comparison, setComparison] = useState<string[]>([])
   const [selectedCode, setSelectedCode] = useState<string | null>(null)
   const rawDataset = query.data
-  const calculated = useQuery({ queryKey: ['convertible-calculated', rawDataset?.revision], queryFn: () => api.calculateConvertibles(rawDataset!.revision), enabled: Boolean(rawDataset?.items.length), staleTime: 30_000, retry: false })
+  const calculated = useQuery({ queryKey: QK.convertibleCalculated(rawDataset?.revision), queryFn: () => api.calculateConvertibles(rawDataset!.revision), enabled: Boolean(rawDataset?.items.length), staleTime: 30_000, retry: false })
   // A result belongs only to its raw revision. Never merge a late pre-save response.
   const activeCalculation = calculated.data?.revision === rawDataset?.revision ? calculated.data : undefined
   const referenceMap = useMemo(() => new Map(activeCalculation?.references.map(item => [codeIdentity(item.code), item])), [activeCalculation])

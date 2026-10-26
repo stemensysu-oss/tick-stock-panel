@@ -93,3 +93,13 @@ def test_invalid_metric_cannot_produce_a_plausible_dependent_ratio():
     c = ConvertibleCalculationSettings(formulas={'outstanding_amount': '-100'})
     row = calculate_personal(item(), '2026-10-26', c, reference())
     assert row.outstanding_amount is None and row.debt_to_float_cap_pct is None
+
+
+def test_personal_holding_override_does_not_inherit_an_unrelated_source_period():
+    settings = ConvertibleCalculationSettings(parameters={'source_fund_holding_pct': 10.0})
+    original = item(fund_holding_pct=20.0, fund_holding_report_date='2025-12-31', fund_holding_publish_date='2026-03-01', research=ConvertibleResearch(fund_holding_report_date='2026-06-30'))
+    result = calculate_personal(original, '2026-10-26', settings, reference())
+    assert result.fund_holding_pct == 10
+    assert result.fund_holding_report_date == '2026-06-30'
+    assert result.fund_holding_publish_date is None
+    assert original.fund_holding_report_date == '2025-12-31'

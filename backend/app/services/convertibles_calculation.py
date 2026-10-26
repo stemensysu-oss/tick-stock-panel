@@ -178,6 +178,9 @@ def calculate_personal(item: ConvertibleItem, as_of: str | None,
     if ref is not None:
         updates.update(maturity_date=maturity, credit_rating=item.credit_rating or value('credit_rating'),
             float_market_cap=context['float_market_cap'], conversion_start_date=item.conversion_start_date or value('conversion_start_date'))
+    if 'source_fund_holding_pct' in parameters or details['fund_holding_pct']['custom']:
+        updates.update(fund_holding_report_date=research.fund_holding_report_date if research else None,
+                       fund_holding_publish_date=None)
     if parameters or any(d['custom'] for d in details.values()):
         warnings.append('包含个人参数或自定义公式，只代表个人研究情景，不修改机构评级或供应商原始资料。')
     if not use_manual and complete:

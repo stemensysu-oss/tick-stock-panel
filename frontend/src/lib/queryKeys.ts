@@ -30,6 +30,8 @@ export const QK = {
   fundTrading: (ticker: string) => ['fund-research', 'trading', ticker] as const,
   fundDividends: (ticker: string) => ['fund-research', 'dividends', ticker] as const,
   convertibleDisclosures: (code: string) => ['convertible-research', 'disclosures', code] as const,
+  convertibleFormulaCatalog: ['convertible-formula-catalog'] as const,
+  convertibleCalculated: (revision: string | undefined) => ['convertible-calculated', revision] as const,
   convertibleReferences: (codes: string[]) => ['convertible-reference', ...codes] as const,
   convertibles: ['convertible-research', 'dataset'] as const,
   convertibleSourceStatus: ['convertible-research', 'source-status'] as const,
