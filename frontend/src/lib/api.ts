@@ -2527,6 +2527,10 @@ export interface ConvertibleItem {
   /** 剩余债券本金 / 正股流通市值 × 100%，不使用转债市值。 */
   debt_to_float_cap_pct?: number | null
   pure_bond_value?: number | null
+  /** 只用于展示的参考覆盖层；不写回人工研究。 */
+  pure_bond_value_basis?: string | null
+  pure_bond_value_date?: string | null
+  maturity_redemption_price?: number | null
   option_value?: number | null
   /** ACT/365 年复利、税前现金流内部收益率。 */
   ytm_pct?: number | null
@@ -2544,6 +2548,38 @@ export interface ConvertibleDataset {
   updated_at: string | null
   source: string
   items: ConvertibleItem[]
+}
+export interface ConvertibleReference {
+  code: string
+  name: string | null
+  source: string
+  source_url: string
+  fetched_at: string
+  maturity_date: string | null
+  source_end_date: string | null
+  conversion_end_date: string | null
+  conversion_start_date: string | null
+  listing_date: string | null
+  lifecycle: string
+  credit_rating: string | null
+  coupon_text: string | null
+  call_clause_text: string | null
+  put_clause_text: string | null
+  pure_bond_value: number | null
+  valuation_date: string | null
+  valuation_close: number | null
+  pure_bond_premium_pct: number | null
+  maturity_redemption_price: number | null
+  call_trigger_price: number | null
+  put_trigger_price: number | null
+  quote_at: string | null
+  warnings: string[]
+}
+export interface ConvertibleReferences {
+  items: ConvertibleReference[]
+  fetched_at: string
+  attempts: { provider: string; dataset: string; status: string; rows?: number }[]
+  warnings: string[]
 }
 export interface ConvertibleSourceStatus {
   provider: string
@@ -2674,6 +2710,7 @@ export const api = {
   fundTrading: (ticker: string) => request<FundTradingResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/trading`, { quiet: true, timeoutMs: 120_000 }),
   fundDividends: (ticker: string) => request<FundDividendsResponse>(`/api/ext/funds/${encodeURIComponent(ticker)}/dividends`, { quiet: true, timeoutMs: 120_000 }),
   convertibleDisclosures: (code: string) => request<ConvertibleDisclosures>(`/api/ext/convertibles/${encodeURIComponent(code)}/disclosures`, { quiet: true, timeoutMs: 60_000 }),
+  convertibleReferences: (codes: string[]) => request<ConvertibleReferences>('/api/ext/convertibles/references', { method: 'POST', body: JSON.stringify({ codes }), quiet: true, timeoutMs: 180_000 }),
   convertibles: () => request<ConvertibleDataset>('/api/ext/convertibles', { quiet: true }),
   convertibleSourceStatus: () => request<ConvertibleSourceStatus>('/api/ext/convertibles/status', { quiet: true }),
   previewConvertibleRestore: (input: { snapshot: ConvertibleDataset }) =>

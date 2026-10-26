@@ -12,6 +12,7 @@ from app.extensions import (
     ExtensionContext,
 )
 from app.services.convertibles_disclosures import ConvertibleDisclosures, disclosures
+from app.services.convertibles_reference import ConvertibleReferences, references
 from app.services.convertibles_fallback import FallbackConvertibleProvider
 from app.services.convertibles_research import (
     CSV_TEMPLATE,
@@ -58,6 +59,11 @@ class RefreshRequest(BaseModel):
     expected_revision: str = Field(min_length=1, max_length=64)
 
 
+class ReferenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    codes: list[Annotated[str, Field(min_length=6, max_length=12)]] = Field(min_length=1, max_length=2000)
+
+
 class AnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     research: ConvertibleResearch
@@ -98,6 +104,13 @@ QuoteServiceDependency = Annotated[ConvertibleQuoteService, Depends(get_quote_se
 
 def setup(registrar: BackendExtensionRegistrar) -> None:
     router = APIRouter(prefix="/api/ext/convertibles", tags=["convertible-research"])
+
+    @router.post('/references', response_model=ConvertibleReferences)
+    def reference_data(body: ReferenceRequest):
+        try:
+            return references(body.codes)
+        except ConvertibleDataError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from None
 
     @router.get('/{code}/disclosures', response_model=ConvertibleDisclosures)
     def sourced_disclosures(code: str):

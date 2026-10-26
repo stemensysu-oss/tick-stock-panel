@@ -18,3 +18,9 @@ it('CSV补充交易所后缀后自选/排除仍按同一六位身份匹配', () 
   expect(readPreferences().watched).toEqual(['110001'])
   expect(readPreferences().hidden).toEqual(['123001'])
 })
+
+it('旧常用列升级后显示纯债与剩余年限，同时保留自选和排除', () => {
+  const columns = ['code', 'name', 'bond_price', 'bond_change_pct', 'stock_name', 'stock_price', 'conversion_price', 'conversion_value', 'conversion_premium_pct', 'double_low', 'credit_rating', 'maturity_date', 'outstanding_amount', 'ytm_pct']
+  window.localStorage.setItem('tsp.convertibles.preferences.v1', JSON.stringify({ watched: ['113052.SH'], hidden: ['123001.SZ'], columns }))
+  expect(readPreferences()).toEqual({ watched: ['113052'], hidden: ['123001'], columns: DEFAULT_COLUMNS })
+})

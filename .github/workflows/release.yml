@@ -11,7 +11,7 @@ name: 桌面客户端发布
 #   - 版本号通过 input 传入, 与 tag 解耦, 更灵活
 #
 # 使用:
-#   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.20 -f platforms=windows
+#   gh workflow run release.yml --ref feature/funds-convertibles -f version=v0.3.21 -f platforms=windows
 #   或 GitHub 网页 Actions → 桌面客户端发布 → Run workflow
 on:
   push:
@@ -22,7 +22,7 @@ on:
       version:
         description: '版本号 (必须与 frontend/package.json 一致；个人 fork 仅构建，不发布 Release/tag)'
         required: true
-        default: 'v0.3.20'
+        default: 'v0.3.21'
       platforms:
         description: '要构建的平台 (逗号分隔: windows,macos,linux)'
         required: true
@@ -172,7 +172,7 @@ jobs:
       - name: 基金收益、披露及转债条款契约测试
         if: matrix.platform == 'windows' || matrix.platform == 'macos'
         working-directory: backend
-        run: uv run --frozen --with pytest==9.0.3 --with pytest-asyncio==1.3.0 --no-sync python -m pytest tests/test_fund_enrichment.py tests/test_convertibles_disclosures.py tests/test_custom_funds.py tests/test_research_fallback.py tests/test_fund_review_regressions.py tests/test_custom_convertibles.py tests/test_content_typography.py tests/test_preferences_cache.py tests/test_preferences_concurrent_write.py -q
+        run: uv run --frozen --with pytest==9.0.3 --with pytest-asyncio==1.3.0 --no-sync python -m pytest tests/test_fund_enrichment.py tests/test_convertibles_disclosures.py tests/test_convertibles_reference.py tests/test_custom_funds.py tests/test_research_fallback.py tests/test_fund_review_regressions.py tests/test_custom_convertibles.py tests/test_content_typography.py tests/test_preferences_cache.py tests/test_preferences_concurrent_write.py -q
 
       - name: 安装 PyInstaller
         # 必须装进 backend 的 uv 环境 (pywebview/polars 等依赖都在那里),

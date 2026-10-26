@@ -29,10 +29,21 @@ def check_enrichment(base, request, require):
     require(terminated['lifecycle'] == 'terminated' and terminated['call_state'] == 'historical_implementation', 'Terminated call history misrepresented')
     require(all(r['provider'] == 'eastmoney_public' for r in [money, trading, dividends, holdings, terms, terminated]), 'Missing public provenance')
     require(terms['attempts'][:2] == [{'provider': 'tickflow', 'status': 'unsupported'}, {'provider': 'fuyao', 'status': 'unsupported'}], 'Unsupported API capability hidden')
+    refs = request(base, '/api/ext/convertibles/references', body={'codes': ['113052', '127068', '113063']}, timeout=180)
+    lookup = {r['code']: r for r in refs['items']}
+    for symbol in ('113052.SH', '127068.SZ'):
+        ref = lookup[symbol]
+        require(ref['lifecycle'] == 'listed' and ref['maturity_date'] and ref['credit_rating'], 'Listed bond maturity/rating missing')
+        require(ref['pure_bond_value'] and ref['valuation_date'] and ref['valuation_close'], 'Dated pure bond valuation missing')
+        require(ref['valuation_date'] <= ref['fetched_at'][:10], 'Valuation date fabricated from future')
+    require(lookup['113052.SH']['maturity_date'] == '2027-12-27', 'Xingye maturity mapped to conversion end')
+    require(lookup['113063.SH']['maturity_date'] is None and lookup['113063.SH']['pure_bond_value'] is None,
+            'Terminated source end date misrepresented as maturity/current valuation')
     result = {'money': {'rows': len(money['items']), 'last': last},
         'trading': trading, 'dividends': {'rows': len(dividends['items']), 'first': dividends['items'][0]},
         'bond_holdings': {'rows': len(holdings['items']), 'report_date': holdings['report_date']},
         'terms': {'code': terms['code'], 'lifecycle': terms['lifecycle'], 'call_state': terms['call_state'], 'events': len(terms['events'])},
-        'terminated': {'code': terminated['code'], 'call_state': terminated['call_state']}}
+        'terminated': {'code': terminated['code'], 'call_state': terminated['call_state']},
+        'convertible_references': {'items': [{k: r[k] for k in ('code', 'maturity_date', 'source_end_date', 'credit_rating', 'pure_bond_value', 'valuation_date', 'valuation_close', 'lifecycle')} for r in refs['items']], 'attempts': refs['attempts']}}
     print(f"Installed fund/bond enrichment passed: {len(money['items'])} money days, {len(dividends['items'])} dividends, {len(holdings['items'])} bond holdings", flush=True)
     return result

@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, Star } from 'lucide-react'
 import type { ConvertibleItem } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { COLUMNS, DEFAULT_COLUMNS, formatColumn, type ColumnId } from './columns'
+import { referenceHint } from './reference'
 import type { ConvertibleSort, SortDirection } from './filter'
 import { codeIdentity } from './preferences'
 
@@ -32,7 +33,7 @@ export function ConvertibleTable({ items, caption, columns = DEFAULT_COLUMNS, so
         <tbody className="divide-y divide-border/60">{items.map(item => <tr key={item.code} className="group text-right hover:bg-elevated/30">
           {visible.map(column => {
             const value = item[column.id]
-            return <td key={column.id} title={column.description} className={cn('whitespace-nowrap px-3 py-3 font-mono tabular-nums', column.id === 'code' && 'sticky left-0 z-10 bg-surface text-left group-hover:bg-elevated', column.id === 'name' && 'sticky left-[130px] z-10 bg-surface text-left font-sans group-hover:bg-elevated', column.id === 'double_low' && 'font-semibold text-accent', (column.id === 'bond_change_pct' || column.id === 'stock_change_pct') && typeof value === 'number' && (value > 0 ? 'text-danger' : value < 0 ? 'text-bear' : 'text-secondary'), value == null && 'text-muted')}>
+            return <td key={column.id} title={column.id === 'pure_bond_value' ? referenceHint(item) ?? column.description : column.description} className={cn('whitespace-nowrap px-3 py-3 font-mono tabular-nums', column.id === 'code' && 'sticky left-0 z-10 bg-surface text-left group-hover:bg-elevated', column.id === 'name' && 'sticky left-[130px] z-10 bg-surface text-left font-sans group-hover:bg-elevated', column.id === 'double_low' && 'font-semibold text-accent', (column.id === 'bond_change_pct' || column.id === 'stock_change_pct') && typeof value === 'number' && (value > 0 ? 'text-danger' : value < 0 ? 'text-bear' : 'text-secondary'), value == null && 'text-muted')}>
               {column.id === 'code' ? <div className="flex items-center gap-2">{onCompare && <input type="checkbox" checked={selected.includes(codeIdentity(item.code))} onChange={() => onCompare(item.code)} aria-label={`对比 ${item.name}`} className="h-3.5 w-3.5 shrink-0 accent-accent" />}{onWatch && <button type="button" onClick={() => onWatch(item.code)} aria-label={`${watched.includes(codeIdentity(item.code)) ? '取消自选' : '加入自选'} ${item.name}`} aria-pressed={watched.includes(codeIdentity(item.code))} className="rounded p-0.5 text-muted hover:text-warning"><Star className={cn('h-3.5 w-3.5', watched.includes(codeIdentity(item.code)) && 'fill-warning text-warning')} /></button>}<span className="text-[10px]">{item.code}</span></div>
                 : column.id === 'name' ? <div>{onOpen ? <button type="button" onClick={() => onOpen(item)} className="max-w-40 truncate text-left font-medium hover:text-accent hover:underline">{item.name}</button> : item.name}<div className="mt-1 max-w-40 truncate text-[10px] font-normal text-muted">{item.call_progress?.state === 'met' ? <span className="text-warning">强赎条件达标 · 待核公告</span> : item.industry || item.redemption_status || (item.asset_type === 'exchangeable' ? '可交换债' : '可转债')}</div></div>
                 : formatColumn(item, column)}

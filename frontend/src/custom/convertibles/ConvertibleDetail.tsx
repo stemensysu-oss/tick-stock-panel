@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Calculator, CheckCircle2, ExternalLink, FileText, Loader2, Plus, Save, ShieldCheck, Trash2, X } from 'lucide-react'
 import { Modal } from '@/components/Modal'
-import { api, ApiError, type ConvertibleDataset, type ConvertibleEvent, type ConvertibleItem, type ConvertibleProgress, type ConvertibleResearch } from '@/lib/api'
+import { api, ApiError, type ConvertibleDataset, type ConvertibleEvent, type ConvertibleItem, type ConvertibleProgress, type ConvertibleResearch, type ConvertibleReference } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { BUTTON, COLUMNS, INPUT, formatColumn, formatNumber, safeSourceUrl } from './columns'
 import { EVENT_LABELS, PROGRESS_LABELS } from './ConvertibleViews'
 import { CashFlowFields, ClauseFields } from './ResearchFields'
+import { ReferenceCard } from './ReferenceCard'
 import { SourcedDisclosures } from './SourcedDisclosures'
 import { buildResearch, createResearchDraft, type ResearchDraft } from './researchForm'
 
@@ -23,7 +24,7 @@ function AnalysisResult({ item, preview = false }: { item: ConvertibleItem; prev
   return <section className="space-y-3 rounded-card border border-accent/20 bg-accent/[0.03] p-4"><div className="flex items-center justify-between"><h3 className="flex items-center gap-1.5 text-xs font-semibold"><Calculator className="h-3.5 w-3.5 text-accent" />{preview ? '本次试算结果' : '已保存的计算结果'}</h3>{preview && <span className="text-[10px] text-accent">尚未保存</span>}</div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{(['ytm_pct', 'put_yield_pct', 'pure_bond_value', 'option_value'] as const).map(id => { const col = COLUMNS.find(column => column.id === id)!; return <div key={id} title={col.description}><p className="text-[10px] text-muted">{col.label}{id === 'pure_bond_value' || id === 'option_value' ? '（模型）' : ''}</p><p className="mt-1.5 font-mono text-lg tabular-nums">{formatColumn(item, col)}<span className="ml-1 font-sans text-[10px] text-muted">{col.unit}</span></p></div> })}</div><div className="grid gap-3 sm:grid-cols-2"><Progress label="强赎" progress={item.call_progress} /><Progress label="回售" progress={item.put_progress} /></div>{Boolean(item.analysis_warnings?.length) && <ul className="space-y-1 border-t border-border pt-3 text-[11px] leading-relaxed text-secondary">{item.analysis_warnings!.map((warning, index) => <li key={index}>· {warning}</li>)}</ul>}</section>
 }
 
-export function ConvertibleDetail({ item, revision, asOf, source, onClose, onSaved, watched, hidden, onWatch, onHide }: { item: ConvertibleItem; revision: string; asOf: string | null; source: string; onClose: () => void; onSaved: (dataset: ConvertibleDataset) => void | Promise<void>; watched: boolean; hidden: boolean; onWatch: () => void; onHide: () => void }) {
+export function ConvertibleDetail({ item, revision, asOf, source, onClose, onSaved, watched, hidden, onWatch, onHide, referenceData }: { referenceData?: ConvertibleReference; item: ConvertibleItem; revision: string; asOf: string | null; source: string; onClose: () => void; onSaved: (dataset: ConvertibleDataset) => void | Promise<void>; watched: boolean; hidden: boolean; onWatch: () => void; onHide: () => void }) {
   const [tab, setTab] = useState<Tab>('overview')
   const [baseRevision] = useState(revision)
   const [initial] = useState(() => {
@@ -65,6 +66,7 @@ export function ConvertibleDetail({ item, revision, asOf, source, onClose, onSav
       {discard && <div role="alert" className="rounded-card border border-warning/30 bg-warning/5 p-3 text-xs"><p>有尚未保存的研究资料。关闭会丢弃本次编辑。</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => setDiscard(false)} className={BUTTON}>继续编辑</button><button type="button" onClick={onClose} className={`${BUTTON} text-danger`}>放弃修改并关闭</button></div></div>}
       {(stale || conflict) && <p role="alert" className="rounded-card border border-warning/30 bg-warning/5 p-3 text-xs leading-relaxed text-warning">研究清单已更新。为避免覆盖别的修改，请保留需要的编辑内容，关闭详情后重新打开再保存。</p>}
       {tab === 'overview' && <>
+        <ReferenceCard data={referenceData} />
         <div className="flex flex-wrap gap-2"><button type="button" onClick={onWatch} className={BUTTON}>{watched ? '取消自选' : '加入自选'}</button><button type="button" onClick={onHide} className={cn(BUTTON, hidden && 'text-warning')}>{hidden ? '移出排除名单' : '加入排除名单'}</button><span className="self-center text-[10px] text-muted">仅保存于本机浏览器，不影响行情数据。</span></div>
         <dl className="grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-3">{COLUMNS.filter(column => !['code', 'name', 'ytm_pct', 'put_yield_pct', 'pure_bond_value', 'option_value'].includes(column.id)).map(column => <div key={column.id} title={column.description}><dt className="text-[10px] text-muted">{column.label}{column.unit && ` (${column.unit})`}</dt><dd className="mt-1.5 break-words font-mono text-sm tabular-nums">{formatColumn(item, column)}</dd></div>)}</dl>
         <AnalysisResult item={result} preview={Boolean(previewResult)} />

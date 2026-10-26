@@ -13,7 +13,9 @@ export function readPreferences(): ResearchPreferences {
     const candidate = raw as Record<string, unknown>
     const codes = (value: unknown) => Array.isArray(value) ? [...new Set(value.filter(validCode).map(codeIdentity))].slice(0, 2000) : []
     const rawColumns = candidate.columns
-    const columns = Array.isArray(rawColumns) ? COLUMNS.filter(column => rawColumns.includes(column.id)).map(column => column.id) : DEFAULT_COLUMNS
+    const oldDefault = ['code', 'name', 'bond_price', 'bond_change_pct', 'stock_name', 'stock_price', 'conversion_price', 'conversion_value', 'conversion_premium_pct', 'double_low', 'credit_rating', 'maturity_date', 'outstanding_amount', 'ytm_pct']
+    const legacyDefault = Array.isArray(rawColumns) && rawColumns.length === oldDefault.length && oldDefault.every(id => rawColumns.includes(id))
+    const columns = legacyDefault ? DEFAULT_COLUMNS : Array.isArray(rawColumns) ? COLUMNS.filter(column => rawColumns.includes(column.id)).map(column => column.id) : DEFAULT_COLUMNS
     return { watched: codes(candidate.watched), hidden: codes(candidate.hidden), columns: [...new Set<ColumnId>(['code', 'name', ...columns])] }
   } catch { return DEFAULT }
 }
