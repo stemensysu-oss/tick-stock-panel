@@ -29,7 +29,10 @@ def probe(entry, label, method, logs, root, *, strict):
     version = json.loads((root/'frontend/package.json').read_text())['version']
     log = logs / (label + '.log')
     with log.open('w') as output:
-        child = subprocess.Popen([sys.executable, str(entry)], cwd=work, env=env, stdout=output, stderr=subprocess.STDOUT)
+        # Use the documented module entry for current source: executing the file
+        # inside app/ puts app/tickflow ahead of the external tickflow SDK.
+        command = [sys.executable, '-m', 'app.desktop'] if strict else [sys.executable, str(entry)]
+        child = subprocess.Popen(command, cwd=work, env=env, stdout=output, stderr=subprocess.STDOUT)
         try:
             deadline = time.monotonic() + 150
             while time.monotonic() < deadline:
