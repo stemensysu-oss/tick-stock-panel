@@ -5,6 +5,7 @@ Never run on a user's Mac: requires CI, isolated runner temp and DATA_DIR.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import plistlib
@@ -18,7 +19,7 @@ from contextlib import suppress
 from pathlib import Path
 
 import psutil
-from windows_installer_smoke import check_api, check_live_api, clean_environment, require
+from windows_installer_smoke import check_api, check_live_api, clean_environment, json_request, require
 from write_build_record import file_sha256
 from macos_exit_check import verify_exit
 
@@ -38,7 +39,20 @@ def stop(child):
         require(not alive, 'The smoke application did not stop')
 
 
-def run_app(app, data, work, version, log, exit_method='command_q', check_live=True):
+def saved_state(base):
+    """Compare restored data before any network refresh can overwrite it."""
+    preferences = json_request(base, '/api/settings/preferences')
+    state = {
+        'convertibles': json_request(base, '/api/ext/convertibles'),
+        'funds': json_request(base, '/api/ext/funds'),
+        'watchlist': sorted(row['symbol'] for row in json_request(base, '/api/watchlist')['symbols']),
+        'typography': {key: preferences.get(key) for key in ('content_font_size', 'content_font_family')},
+    }
+    return {key: hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
+            for key, value in state.items()}
+
+
+def run_app(app, data, work, version, log, exit_method='command_q', check_live=True, expected_state=None):
     import Quartz
 
     with log.open('w', encoding='utf8') as output:
@@ -67,6 +81,9 @@ def run_app(app, data, work, version, log, exit_method='command_q', check_live=T
                     if time.monotonic() - ready >= 10:
                         check_api(base, version)
                         live = check_live_api(base) if check_live else None
+                        restored = saved_state(base)
+                        if expected_state is not None:
+                            require(restored == expected_state, 'Restart/replacement altered saved research, watchlist or typography')
                         screenshot = log.with_suffix('.png')
                         capture = subprocess.run(['screencapture', '-x', str(screenshot)], check=False, capture_output=True)
                         exit_result = verify_exit(child, exit_method, owned[0], data, base, log)
@@ -74,6 +91,8 @@ def run_app(app, data, work, version, log, exit_method='command_q', check_live=T
                         return {'visible_window': True, 'health': True, 'window_count': len(owned),
                             'screenshot_saved': capture.returncode == 0 and screenshot.is_file(),
                             'graceful_exit': exit_result,
+                            'saved_state_sha256': restored,
+                            'saved_state_restored': expected_state is not None,
                             'verified_live_fallback': live}
                 else:
                     ready = None
@@ -123,10 +142,14 @@ def main():
         shutil.rmtree(installed)
         subprocess.run(['ditto', str(source), str(installed)], check=True)
         require(sentinel.read_text(encoding='utf8') == 'preserve-external-user-data', 'App replacement deleted external data')
-        report['checks']['second_launch'] = run_app(installed, data, work, args.version, logs/'second-launch.log', 'window_close')
-        report['checks']['system_quit'] = run_app(installed, data, work, args.version, logs/'system-quit.log', 'system_quit', False)
+        expected_state = report['checks']['first_launch']['saved_state_sha256']
+        # Live providers were verified on first launch. Upgrade tests compare
+        # the original persisted data before refreshing it: a successful fresh
+        # fetch would otherwise conceal data loss during replacement/restart.
+        report['checks']['second_launch'] = run_app(installed, data, work, args.version, logs/'second-launch.log', 'window_close', False, expected_state)
+        report['checks']['system_quit'] = run_app(installed, data, work, args.version, logs/'system-quit.log', 'system_quit', False, expected_state)
         require(not report['checks']['first_launch']['verified_live_fallback']['content_typography']['restored'], 'First Mac launch did not use typography defaults')
-        require(report['checks']['second_launch']['verified_live_fallback']['content_typography']['restored'], 'Mac replacement did not retain typography settings')
+        require(report['checks']['second_launch']['saved_state_restored'], 'Mac replacement did not retain saved state')
         require(sentinel.read_text(encoding='utf8') == 'preserve-external-user-data', 'Restart deleted external data')
         report['checks']['replacement_preserved_data'] = True
         report['status'] = 'passed'
