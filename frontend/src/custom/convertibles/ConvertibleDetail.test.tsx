@@ -7,7 +7,7 @@ import { ApiError, type ConvertibleItem, type ConvertibleResearch } from '@/lib/
 import { ConvertibleDetail } from './ConvertibleDetail'
 import { buildResearch, createResearchDraft } from './researchForm'
 
-const mocks = vi.hoisted(() => ({ analyze: vi.fn(), save: vi.fn(), saved: vi.fn(), disclosures: vi.fn() }))
+const mocks = vi.hoisted(() => ({ analyze: vi.fn(), save: vi.fn(), saved: vi.fn(), disclosures: vi.fn(), close: vi.fn() }))
 vi.mock('@/lib/api', () => ({
   ApiError: class extends Error { constructor(message: string, readonly status: number) { super(message) } },
   api: { previewConvertibleCalculation: mocks.analyze, saveConvertibleResearch: mocks.save, convertibleDisclosures: mocks.disclosures },
@@ -33,9 +33,95 @@ async function fill(label: string, value: string) {
   await act(async () => { const prototype = field instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(field, value); field.dispatchEvent(new Event(field instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true })) })
 }
 async function render(research?: ConvertibleResearch) {
-  await act(async () => root.render(<QueryClientProvider client={client}><ConvertibleDetail item={{ ...item, research }} revision="revision-1" asOf="2026-10-21" source="用户导入" onClose={() => {}} onSaved={mocks.saved} watched={false} hidden={false} onWatch={() => {}} onHide={() => {}} /></QueryClientProvider>))
+  await act(async () => root.render(<QueryClientProvider client={client}><ConvertibleDetail item={{ ...item, research }} revision="revision-1" asOf="2026-10-21" source="用户导入" onClose={mocks.close} onSaved={mocks.saved} watched={false} hidden={false} onWatch={() => {}} onHide={() => {}} /></QueryClientProvider>))
   await settle()
 }
+async function requestClose(method: 'backdrop' | 'escape' | 'button') {
+  await act(async () => {
+    if (method === 'escape') document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    else if (method === 'button') host.querySelector<HTMLButtonElement>('[aria-label="关闭转债详情"]')!.click()
+    else {
+      const backdrop = host.querySelector('[role="dialog"]')!.parentElement!
+      backdrop.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      backdrop.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+      backdrop.click()
+    }
+  })
+  await settle()
+}
+it.each(['backdrop', 'escape', 'button'] as const)('浏览详情时可通过 %s 关闭', async method => {
+  await render()
+  await requestClose(method)
+  expect(mocks.close).toHaveBeenCalledTimes(1)
+  expect(mocks.save).not.toHaveBeenCalled()
+})
+it('面板内操作和从面板内拖选到外侧不会误关；随后正常点击外侧仍可关闭', async () => {
+  await render()
+  await click('现金流与估值')
+  expect(mocks.close).not.toHaveBeenCalled()
+  const title = host.querySelector('#convertible-detail-title')!
+  const backdrop = host.querySelector('[role="dialog"]')!.parentElement!
+  await act(async () => {
+    title.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    backdrop.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    backdrop.click()
+  })
+  expect(mocks.close).not.toHaveBeenCalled()
+  await requestClose('backdrop')
+  expect(mocks.close).toHaveBeenCalledTimes(1)
+})
+it.each(['backdrop', 'escape', 'button'] as const)('未保存修改通过 %s 关闭时先确认；继续编辑保留输入，明确放弃才关闭', async method => {
+  await render()
+  await click('现金流与估值')
+  await fill('纯债折现率（%）', '3')
+  await requestClose(method)
+  expect(mocks.close).not.toHaveBeenCalled()
+  expect(host.textContent).toContain('关闭会丢弃本次编辑')
+  await click('继续编辑')
+  expect(host.textContent).not.toContain('关闭会丢弃本次编辑')
+  expect((host.querySelector('[aria-label="纯债折现率（%）"]') as HTMLInputElement).value).toBe('3')
+  await requestClose(method)
+  await requestClose(method)
+  expect(mocks.close).not.toHaveBeenCalled()
+  await click('放弃修改并关闭')
+  expect(mocks.close).toHaveBeenCalledTimes(1)
+  expect(mocks.save).not.toHaveBeenCalled()
+})
+it.each(['试算', '保存研究资料'])('%s 进行中不能通过外侧、Esc 或关闭按钮中断', async action => {
+  let reject!: (reason: Error) => void
+  const pending = new Promise<never>((_, fail) => { reject = fail })
+  if (action === '试算') mocks.analyze.mockReturnValue(pending)
+  else mocks.save.mockReturnValue(pending)
+  await render()
+  await click('现金流与估值')
+  await fill('纯债折现率（%）', '3')
+  await click(action)
+  for (const method of ['backdrop', 'escape', 'button'] as const) await requestClose(method)
+  expect(mocks.close).not.toHaveBeenCalled()
+  expect(host.textContent).not.toContain('关闭会丢弃本次编辑')
+  await act(async () => reject(new Error('请求失败测试')))
+  await settle()
+  await requestClose('backdrop')
+  expect(host.textContent).toContain('关闭会丢弃本次编辑')
+  expect(mocks.close).not.toHaveBeenCalled()
+})
+it('已显示放弃提示后开始保存，也不能通过放弃按钮中断保存', async () => {
+  let reject!: (reason: Error) => void
+  mocks.save.mockReturnValue(new Promise<never>((_, fail) => { reject = fail }))
+  await render()
+  await click('现金流与估值')
+  await fill('纯债折现率（%）', '3')
+  await requestClose('escape')
+  await click('保存研究资料')
+  const discardButton = [...host.querySelectorAll('button')].find(button => button.textContent === '放弃修改并关闭')!
+  expect(discardButton.disabled).toBe(true)
+  await act(async () => discardButton.click())
+  expect(mocks.close).not.toHaveBeenCalled()
+  await act(async () => reject(new Error('保存失败测试')))
+  await settle()
+  await click('继续编辑')
+  expect((host.querySelector('[aria-label="纯债折现率（%）"]') as HTMLInputElement).value).toBe('3')
+})
 it('试算不写入，保存携带打开时版本；冲突不会清空表单或允许直接覆盖', async () => {
   const research = buildResearch(createResearchDraft()); research.price_basis = 'full'
   research.cash_flows = [{ date: '2027-10-21', amount: 110 }]; research.cash_flows_complete = true
